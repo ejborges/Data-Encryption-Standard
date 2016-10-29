@@ -1,3 +1,6 @@
+## More gitignore templates
+## https://github.com/github/gitignore
+
 # Prerequisites
 *.d
 
@@ -5,9 +8,11 @@
 *.slo
 *.lo
 *.o
+#*.obj
 
 # Precompiled Headers
 *.gch
+#*.pch
 
 # Compiled Dynamic libraries
 *.so

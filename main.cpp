@@ -31,6 +31,9 @@ bool ecbMode;
 fstream infile;
 fstream outfile;
 
+unsigned int infile_byte_length;
+
+bool print64(uint64_t &value, char type);
 
 int main(int argc, char *argv[]) {
 
@@ -109,24 +112,13 @@ int main(int argc, char *argv[]) {
         return 0;
     }
     #ifdef DEBUG
-    char hex_char[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
-    char key_hex[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    char key_string[8] = {0, 0, 0, 0, 0, 0, 0, 0};
     cout << "uint64_t key = 0d" << key << "\n             = 0b";
-    for(int i = 63, j = 0, k = 0; i >=0; --i){
-        if(key & (1ULL << i)) {
-            cout << "1";
-            key_hex[j] |= (1 << (i % 4));
-            key_string[k] |= (1 << (i % 8));
-        }
-        else cout << "0";
-        if(!(i % 4)) ++j; if(!(i % 8)) ++k;
-    }
-    cout << "\n             = 0x";
-    for(int i = 0; i < 16; ++i) cout << hex_char[key_hex[i]];
-    cout << "\n             = \"";
-    for(int i = 0; i < 8; ++i) cout << key_string[i];
-    cout << "\"" << endl;
+    if(print64(key, 'b')) return 0;
+    cout << "\n             = ";
+    if(print64(key, 'h')) return 0;
+    cout << "\n             = ";
+    if(print64(key, 's')) return 0;
+    cout << endl;
     #endif
 
     // <mode>
@@ -174,14 +166,54 @@ int main(int argc, char *argv[]) {
 
 
     // ------------------------------------------------------------------------
-    // TODO
+    // TODO Start working on DES crypto code
     // ------------------------------------------------------------------------
 
-        //_____
-        //e&c&b
 
-        //_ _ _
-        //e|c|b
 
     return 0;
+}
+
+
+// cout the given 64 bit value in its binary, hex, or "string" representation
+// char type defines cout as 'b' for binary, 'h' for hex, or 's' for string
+// bool return false if successful cout with no errors, true if error occurred
+bool print64(uint64_t &value, char type){
+
+    switch(tolower(type)){
+
+        case 'b': {
+            for (int i = 63; i >= 0; --i) {
+                if (value & (1ULL << i)) cout << "1";
+                else cout << "0";
+            }
+            break;
+        }
+
+        case 'h': {
+            printf("0x%016llX", value); // '016' = print 16 characters (will include leading zeros)
+                                        // 'll'  = treat value as 64 bit (long long)
+                                        // 'X'   = print as uppercase HEX value
+            break;
+        }
+
+        case 's':{
+            char key_string[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+            for(int i = 63, k = 0; i >=0; --i){
+                if(key & (1ULL << i)) key_string[k] |= (1 << (i % 8));
+                if(!(i % 8)) ++k;
+            }
+            cout << "\"";
+            for(int i = 0; i < 8; ++i) cout << key_string[i];
+            cout << "\"";
+            break;
+        }
+
+        default:{
+            cout << "\nUnknown type \'" << type << "\' as input parameter to print64(); Exiting DES\n";
+            return true;
+        }
+    }
+
+    return false;
 }
