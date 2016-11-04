@@ -25,7 +25,7 @@
 #include <math.h>
 
 // comment out this define to prevent debugging text from printing to the console
-//#define DEBUG
+#define DEBUG
 
 using namespace std;
 
@@ -37,12 +37,14 @@ fstream outfile;                // output file stream
 uint64_t block;                 // container for our 64 bit block throughout the DES algorithm
 uint64_t infile_byte_length;
 unsigned int bytes_remaining;   // number of bytes yet to be read
+uint64_t subkey[16];            // storage for the sixteen 48 bit sub keys used throughout DES's sixteen cycles
 
 // function input/output defined with function definition
 void print64(uint64_t &value, char type);
 void readBlock();
 void writeBlock();
 void DES();
+void generateSubKeys();
 
 int main(int argc, char *argv[]) {
 
@@ -72,6 +74,8 @@ int main(int argc, char *argv[]) {
     cout << "\targv[3] = <mode>    = " << argv[3] << endl;
     cout << "\targv[4] = <infile>  = " << argv[4] << endl;
     cout << "\targv[5] = <outfile> = " << argv[5] << endl;
+
+    cout << "\nVariable Values:";
     #endif
 
     // <-action>
@@ -84,7 +88,7 @@ int main(int argc, char *argv[]) {
     else if(tolower(argv[1][1]) != 'd')
         {cout << "\nInvalid <-action> argument! Only -e and -d allowed\n"; return 0;}
     #ifdef DEBUG
-    cout << "\nbool encrypt = ";
+    cout << "\n\tbool encrypt = ";
     if(encrypt) cout << "TRUE" << endl;
     else cout << "FALSE" << endl;
     #endif
@@ -139,13 +143,19 @@ int main(int argc, char *argv[]) {
         cout << "Invalid <key> argument! Must begin with single quote character or HEX value (without 0x prefix)";
         return 0;
     }
+    uint64_t badkey1 = 0ULL;
+    uint64_t badkey2 = 0xFFFFFFFFFFFFFFFF;
+    uint64_t badkey3 = 0xFFFFFFFF00000000;
+    uint64_t badkey4 = 0x00000000FFFFFFFF;
+    if(key == badkey1 || key == badkey2 || key == badkey3 || key == badkey4)
+        {cout << "\nThe key used will not work well with DES. Please choose a better key.\nExiting DES."; return 0;}
     #ifdef DEBUG
     // print 64 bit key value in decimal, binary, hex, and ascii string representation
-    cout << "uint64_t key = 0d" << key << "\n             = ";
+    cout << "\tuint64_t key = 0d" << key << "\n\t             = ";
     print64(key, 'b');
-    cout << "\n             = ";
+    cout << "\n\t             = ";
     print64(key, 'x');
-    cout << "\n             = ";
+    cout << "\n\t             = ";
     print64(key, 's');
     cout << endl;
     #endif
@@ -156,7 +166,7 @@ int main(int argc, char *argv[]) {
         {cout << "\nInvalid <mode> argument; Only ECB mode supported\n"; return 0;}
     ecbMode = true;
     #ifdef DEBUG
-    cout << "bool ecbMode = ";
+    cout << "\tbool ecbMode = ";
     if(ecbMode) cout << "TRUE" << endl;
     else cout << "FALSE" << endl;
     #endif
@@ -169,7 +179,7 @@ int main(int argc, char *argv[]) {
     infile.open(argv[4], fstream::in | fstream::binary);
     if(infile.fail()) {cout << "\nFailed to open \"" << argv[4] << "\"" << endl; return 0;}
     #ifdef DEBUG
-    cout << "\nSuccessfully opened  \"" << argv[4] << "\"" << endl;
+    cout << "\nFile Access:\n\tSuccessfully opened  \"" << argv[4] << "\"" << endl;
     #endif
 
     // <outfile>
@@ -177,7 +187,7 @@ int main(int argc, char *argv[]) {
     // check if file already exists; ask to overwrite if so
     if(outfile.good()) {
         outfile.close();
-        cout << "\n\"" << argv[5] << "\" already exists.\nOverwrite? [y/n]\n";
+        cout << "\n\t\"" << argv[5] << "\" already exists.\n\tOverwrite? [y/n]:";
         char overwrite;
         cin >> overwrite;
         if(tolower(overwrite) == 'n') {cout << "Exiting DES"; return 0;}
@@ -187,7 +197,7 @@ int main(int argc, char *argv[]) {
         outfile.open(argv[5], fstream::out | fstream::binary | fstream::trunc);
         if(outfile.fail()) {cout << "\nFailed to open \"" << argv[5] << "\"" << endl; return 0;}
         #ifdef DEBUG
-        cout << "Successfully opened  \"" << argv[5] << "\"" << endl;
+        cout << "\tSuccessfully opened  \"" << argv[5] << "\"" << endl;
         #endif
     }
     else if(outfile.fail()){
@@ -195,7 +205,7 @@ int main(int argc, char *argv[]) {
         outfile.open(argv[5], fstream::out | fstream::binary);
         if(outfile.fail()) {cout << "\nFailed to create \"" << argv[5] << "\"" << endl; return 0;}
         #ifdef DEBUG
-        cout << "Successfully created \"" << argv[5] << "\"" << endl;
+        cout << "\tSuccessfully created \"" << argv[5] << "\"" << endl;
         #endif
     }
 
@@ -212,11 +222,199 @@ int main(int argc, char *argv[]) {
     infile.seekg(0, infile.beg); // put cursor at beginning of file
 
 
+
     // ------------------------------------------------------------------------
-    // Begin generating encrypted/decrypted blocks
+    // Generate sixteen 48 bit sub keys (for each of DES's sixteen rounds)
+    // from the given 64 bit key
+    // ------------------------------------------------------------------------
+
+    #ifdef DEBUG
+    cout << "\nGenerating sixteen 48 bit sub keys:";
+    #endif
+
+    // Compress 64 bit key to 56 bit permuted key ---------------/
+    uint64_t compressed_56_bit_key = 0ULL;
+
+    if(key & (1ULL << 63)) compressed_56_bit_key |= (1ULL << 7);
+    if(key & (1ULL << 62)) compressed_56_bit_key |= (1ULL << 15);
+    if(key & (1ULL << 61)) compressed_56_bit_key |= (1ULL << 23);
+    if(key & (1ULL << 60)) compressed_56_bit_key |= (1ULL << 55);
+    if(key & (1ULL << 59)) compressed_56_bit_key |= (1ULL << 51);
+    if(key & (1ULL << 58)) compressed_56_bit_key |= (1ULL << 43);
+    if(key & (1ULL << 57)) compressed_56_bit_key |= (1ULL << 35);
+
+    if(key & (1ULL << 55)) compressed_56_bit_key |= (1ULL << 6);
+    if(key & (1ULL << 54)) compressed_56_bit_key |= (1ULL << 14);
+    if(key & (1ULL << 53)) compressed_56_bit_key |= (1ULL << 22);
+    if(key & (1ULL << 52)) compressed_56_bit_key |= (1ULL << 54);
+    if(key & (1ULL << 51)) compressed_56_bit_key |= (1ULL << 50);
+    if(key & (1ULL << 50)) compressed_56_bit_key |= (1ULL << 42);
+    if(key & (1ULL << 49)) compressed_56_bit_key |= (1ULL << 34);
+
+    if(key & (1ULL << 47)) compressed_56_bit_key |= (1ULL << 5);
+    if(key & (1ULL << 46)) compressed_56_bit_key |= (1ULL << 13);
+    if(key & (1ULL << 45)) compressed_56_bit_key |= (1ULL << 21);
+    if(key & (1ULL << 44)) compressed_56_bit_key |= (1ULL << 53);
+    if(key & (1ULL << 43)) compressed_56_bit_key |= (1ULL << 49);
+    if(key & (1ULL << 42)) compressed_56_bit_key |= (1ULL << 41);
+    if(key & (1ULL << 41)) compressed_56_bit_key |= (1ULL << 33);
+
+    if(key & (1ULL << 39)) compressed_56_bit_key |= (1ULL << 4);
+    if(key & (1ULL << 38)) compressed_56_bit_key |= (1ULL << 12);
+    if(key & (1ULL << 37)) compressed_56_bit_key |= (1ULL << 20);
+    if(key & (1ULL << 36)) compressed_56_bit_key |= (1ULL << 52);
+    if(key & (1ULL << 35)) compressed_56_bit_key |= (1ULL << 48);
+    if(key & (1ULL << 34)) compressed_56_bit_key |= (1ULL << 40);
+    if(key & (1ULL << 33)) compressed_56_bit_key |= (1ULL << 32);
+
+    if(key & (1ULL << 31)) compressed_56_bit_key |= (1ULL << 3);
+    if(key & (1ULL << 30)) compressed_56_bit_key |= (1ULL << 11);
+    if(key & (1ULL << 29)) compressed_56_bit_key |= (1ULL << 19);
+    if(key & (1ULL << 28)) compressed_56_bit_key |= (1ULL << 27);
+    if(key & (1ULL << 27)) compressed_56_bit_key |= (1ULL << 47);
+    if(key & (1ULL << 26)) compressed_56_bit_key |= (1ULL << 39);
+    if(key & (1ULL << 25)) compressed_56_bit_key |= (1ULL << 31);
+
+    if(key & (1ULL << 23)) compressed_56_bit_key |= (1ULL << 2);
+    if(key & (1ULL << 22)) compressed_56_bit_key |= (1ULL << 10);
+    if(key & (1ULL << 21)) compressed_56_bit_key |= (1ULL << 18);
+    if(key & (1ULL << 20)) compressed_56_bit_key |= (1ULL << 26);
+    if(key & (1ULL << 19)) compressed_56_bit_key |= (1ULL << 46);
+    if(key & (1ULL << 18)) compressed_56_bit_key |= (1ULL << 38);
+    if(key & (1ULL << 17)) compressed_56_bit_key |= (1ULL << 30);
+
+    if(key & (1ULL << 15)) compressed_56_bit_key |= (1ULL << 1);
+    if(key & (1ULL << 14)) compressed_56_bit_key |= (1ULL << 9);
+    if(key & (1ULL << 13)) compressed_56_bit_key |= (1ULL << 17);
+    if(key & (1ULL << 12)) compressed_56_bit_key |= (1ULL << 25);
+    if(key & (1ULL << 11)) compressed_56_bit_key |= (1ULL << 45);
+    if(key & (1ULL << 10)) compressed_56_bit_key |= (1ULL << 37);
+    if(key & (1ULL << 9)) compressed_56_bit_key |= (1ULL << 29);
+
+    if(key & (1ULL << 7)) compressed_56_bit_key |= (1ULL << 0);
+    if(key & (1ULL << 6)) compressed_56_bit_key |= (1ULL << 8);
+    if(key & (1ULL << 5)) compressed_56_bit_key |= (1ULL << 16);
+    if(key & (1ULL << 4)) compressed_56_bit_key |= (1ULL << 24);
+    if(key & (1ULL << 3)) compressed_56_bit_key |= (1ULL << 44);
+    if(key & (1ULL << 2)) compressed_56_bit_key |= (1ULL << 36);
+    if(key & (1ULL << 1)) compressed_56_bit_key |= (1ULL << 28);
+
+    #ifdef DEBUG
+    cout << "\n\tcompressed_56_bit_key = ";
+    print64(compressed_56_bit_key, 'b');
+    cout << "\n\t                      = ";
+    print64(compressed_56_bit_key, 'x');
+    cout << endl;
+    #endif
+
+    // Compute the sixteen 48 bit sub keys -----------------------------------/
+    uint32_t left;
+    uint32_t right;
+    uint64_t compressed_48_bit_key;
+
+    for(int i = 0; i < 16; ++i){
+        // split compressed 56 bit key in half
+        left  = (uint32_t)(compressed_56_bit_key >> 28);
+        right = (uint32_t)(compressed_56_bit_key & 0x0000000FFFFFFF);
+
+        if(i == 0 || i == 1 || i == 8 || i == 15){
+            // rotate left (circular shift) by 1 bit
+            left = ((left << 1) | (left >> 27)) & 0x0fffffff;
+            right = ((right << 1) | (right >> 27)) & 0x0fffffff;
+        }
+        else {
+            // rotate left (circular shift) by 2 bits
+            left = ((left << 1) | (left >> 27)) & 0x0fffffff;
+            left = ((left << 1) | (left >> 27)) & 0x0fffffff;
+            right = ((right << 1) | (right >> 27)) & 0x0fffffff;
+            right = ((right << 1) | (right >> 27)) & 0x0fffffff;
+        }
+
+        // combine both rotated 28 bit halves
+        compressed_56_bit_key = (((uint64_t)left) << 28) | ((uint64_t)right);
+
+        compressed_48_bit_key = 0ULL;
+
+        // Compression permutation from 56 bit key to 48 bit key
+        if(compressed_56_bit_key & (1ULL << 55)) compressed_48_bit_key |= (1ULL << 4);
+        if(compressed_56_bit_key & (1ULL << 54)) compressed_48_bit_key |= (1ULL << 23);
+        if(compressed_56_bit_key & (1ULL << 53)) compressed_48_bit_key |= (1ULL << 6);
+        if(compressed_56_bit_key & (1ULL << 52)) compressed_48_bit_key |= (1ULL << 15);
+        if(compressed_56_bit_key & (1ULL << 51)) compressed_48_bit_key |= (1ULL << 5);
+        if(compressed_56_bit_key & (1ULL << 50)) compressed_48_bit_key |= (1ULL << 9);
+        if(compressed_56_bit_key & (1ULL << 49)) compressed_48_bit_key |= (1ULL << 19);
+        if(compressed_56_bit_key & (1ULL << 48)) compressed_48_bit_key |= (1ULL << 17);
+
+        if(compressed_56_bit_key & (1ULL << 46)) compressed_48_bit_key |= (1ULL << 11);
+        if(compressed_56_bit_key & (1ULL << 45)) compressed_48_bit_key |= (1ULL << 2);
+        if(compressed_56_bit_key & (1ULL << 44)) compressed_48_bit_key |= (1ULL << 14);
+        if(compressed_56_bit_key & (1ULL << 43)) compressed_48_bit_key |= (1ULL << 22);
+        if(compressed_56_bit_key & (1ULL << 42)) compressed_48_bit_key |= (1ULL << 0);
+        if(compressed_56_bit_key & (1ULL << 41)) compressed_48_bit_key |= (1ULL << 8);
+        if(compressed_56_bit_key & (1ULL << 40)) compressed_48_bit_key |= (1ULL << 18);
+        if(compressed_56_bit_key & (1ULL << 39)) compressed_48_bit_key |= (1ULL << 1);
+
+        if(compressed_56_bit_key & (1ULL << 37)) compressed_48_bit_key |= (1ULL << 13);
+        if(compressed_56_bit_key & (1ULL << 36)) compressed_48_bit_key |= (1ULL << 21);
+        if(compressed_56_bit_key & (1ULL << 35)) compressed_48_bit_key |= (1ULL << 10);
+
+        if(compressed_56_bit_key & (1ULL << 33)) compressed_48_bit_key |= (1ULL << 12);
+        if(compressed_56_bit_key & (1ULL << 32)) compressed_48_bit_key |= (1ULL << 3);
+
+        if(compressed_56_bit_key & (1ULL << 30)) compressed_48_bit_key |= (1ULL << 16);
+        if(compressed_56_bit_key & (1ULL << 29)) compressed_48_bit_key |= (1ULL << 20);
+        if(compressed_56_bit_key & (1ULL << 28)) compressed_48_bit_key |= (1ULL << 7);
+        if(compressed_56_bit_key & (1ULL << 27)) compressed_48_bit_key |= (1ULL << 46);
+        if(compressed_56_bit_key & (1ULL << 26)) compressed_48_bit_key |= (1ULL << 30);
+        if(compressed_56_bit_key & (1ULL << 25)) compressed_48_bit_key |= (1ULL << 26);
+        if(compressed_56_bit_key & (1ULL << 24)) compressed_48_bit_key |= (1ULL << 47);
+        if(compressed_56_bit_key & (1ULL << 23)) compressed_48_bit_key |= (1ULL << 34);
+        if(compressed_56_bit_key & (1ULL << 22)) compressed_48_bit_key |= (1ULL << 40);
+
+        if(compressed_56_bit_key & (1ULL << 20)) compressed_48_bit_key |= (1ULL << 45);
+        if(compressed_56_bit_key & (1ULL << 19)) compressed_48_bit_key |= (1ULL << 27);
+
+        if(compressed_56_bit_key & (1ULL << 17)) compressed_48_bit_key |= (1ULL << 38);
+        if(compressed_56_bit_key & (1ULL << 16)) compressed_48_bit_key |= (1ULL << 31);
+        if(compressed_56_bit_key & (1ULL << 15)) compressed_48_bit_key |= (1ULL << 24);
+        if(compressed_56_bit_key & (1ULL << 14)) compressed_48_bit_key |= (1ULL << 43);
+
+        if(compressed_56_bit_key & (1ULL << 12)) compressed_48_bit_key |= (1ULL << 36);
+        if(compressed_56_bit_key & (1ULL << 11)) compressed_48_bit_key |= (1ULL << 33);
+        if(compressed_56_bit_key & (1ULL << 10)) compressed_48_bit_key |= (1ULL << 42);
+        if(compressed_56_bit_key & (1ULL << 9)) compressed_48_bit_key |= (1ULL << 28);
+        if(compressed_56_bit_key & (1ULL << 8)) compressed_48_bit_key |= (1ULL << 35);
+        if(compressed_56_bit_key & (1ULL << 7)) compressed_48_bit_key |= (1ULL << 37);
+        if(compressed_56_bit_key & (1ULL << 6)) compressed_48_bit_key |= (1ULL << 44);
+        if(compressed_56_bit_key & (1ULL << 5)) compressed_48_bit_key |= (1ULL << 32);
+        if(compressed_56_bit_key & (1ULL << 4)) compressed_48_bit_key |= (1ULL << 25);
+        if(compressed_56_bit_key & (1ULL << 3)) compressed_48_bit_key |= (1ULL << 41);
+
+        if(compressed_56_bit_key & (1ULL << 1)) compressed_48_bit_key |= (1ULL << 29);
+        if(compressed_56_bit_key & (1ULL << 0)) compressed_48_bit_key |= (1ULL << 39);
+
+        // save key
+        subkey[i] = compressed_48_bit_key;
+
+        #ifdef DEBUG
+        cout << "\tsubkey[" << i << "] = ";
+        print64(compressed_48_bit_key, 'b');
+        cout << " = ";
+        print64(compressed_48_bit_key, 'x');
+        cout << endl;
+        #endif
+    }
+
+
+    // ------------------------------------------------------------------------
+    // Encrypt or Decrypt?
     // ------------------------------------------------------------------------
 
     if(encrypt) {
+        #ifdef DEBUG
+        cout << "\nEncryption:";
+        #endif
+
         // Create first 64 bit block with file size
         // left 33 bits  = randomly generated garbage
         // right 31 bits = file size (in bytes)
@@ -263,12 +461,12 @@ int main(int argc, char *argv[]) {
                                                 // into same 64 bit block
         }
         #ifdef DEBUG
-        cout << "\nGenerated 64 bit block with left 33 bits as random and right 31 bits as file size in bytes" << endl;
-        cout << "\n<infile> size = 0d" << infile_byte_length << " bytes";
-        printf("\n              = 0x%llX bytes\n", infile_byte_length);
-        cout << "\nfile size block = ";
+        cout << "\n\tGenerated 64 bit block with left 33 bits as random and right 31 bits as file size in bytes" << endl;
+        cout << "\t\t<infile> size = 0d" << infile_byte_length << " bytes";
+        printf("\n\t\t              = 0x%llX bytes", infile_byte_length);
+        cout << "\n\t\tfile size block = ";
         print64(block, 'b');
-        cout << "\n                = ";
+        cout << "\n\t\t                = ";
         print64(block, 'x');
         cout << endl;
         #endif
@@ -292,6 +490,10 @@ int main(int argc, char *argv[]) {
         //cout << "\nbytes_remaining = " << bytes_remaining;
     }
     else{
+        #ifdef DEBUG
+        cout << "\nDecryption:";
+        #endif
+
         if(infile_byte_length < 8) {cout << "\nInput file size too small. Exiting DES."; return 0;}
         if(infile_byte_length % 8) {cout << "\nInput file size not multiple of 8. Exiting DES."; return 0;}
 
@@ -408,6 +610,11 @@ void DES(){
     if(block & (1ULL << 1)) initial_permutation |= (1ULL << 56);
     if(block & (1ULL << 0)) initial_permutation |= (1ULL << 24);
 
+    // ------------------------------------------------------------------------
+    // TODO next step
+    // ------------------------------------------------------------------------
+
+
 
 
 
@@ -500,7 +707,19 @@ void DES(){
     // ------------------------------------------------------------------------
 
 
+    return;
+}
 
+// Given the 64 bit key from the user,
+// generate sixteen 48 bit sub keys to
+// use throughout the sixteen cycles of DES
+//
+// Sub keys are stored in subkey[]
+void generateSubKeys(){
+
+
+
+    return;
 }
 
 // read 8 bytes from <infile> and places them in the global block variable
