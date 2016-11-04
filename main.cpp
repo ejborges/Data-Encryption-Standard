@@ -24,9 +24,8 @@
 #include <time.h>
 #include <math.h>
 
-// comment out this define to prevent debugging
-// text from printing to the console
-#define DEBUG
+// comment out this define to prevent debugging text from printing to the console
+//#define DEBUG
 
 using namespace std;
 
@@ -43,6 +42,7 @@ unsigned int bytes_remaining;   // number of bytes yet to be read
 void print64(uint64_t &value, char type);
 void readBlock();
 void writeBlock();
+void DES();
 
 int main(int argc, char *argv[]) {
 
@@ -276,6 +276,7 @@ int main(int argc, char *argv[]) {
         cout << "\nEncrypting..." << endl;
 
         // TODO encrypt block
+        DES();
 
         // write encrypted block (containing 33 bits of garbage and 31 bits of file length) to <outfile>
         writeBlock();
@@ -285,6 +286,7 @@ int main(int argc, char *argv[]) {
         while(bytes_remaining){
             readBlock();
             // TODO encrypt block
+            DES();
             writeBlock();
         }
         //cout << "\nbytes_remaining = " << bytes_remaining;
@@ -293,20 +295,26 @@ int main(int argc, char *argv[]) {
         if(infile_byte_length < 8) {cout << "\nInput file size too small. Exiting DES."; return 0;}
         if(infile_byte_length % 8) {cout << "\nInput file size not multiple of 8. Exiting DES."; return 0;}
 
-        cout << "\nDecrypting..." << endl;
+        cout << "\nDecrypting block 0 of " << (infile_byte_length >> 3);
+        unsigned int currentBlock = 0;
 
+        // read first block containing original file length
         readBlock();
+
+        // comment
         // TODO decrypt block
+
+        // extract file length value by bit masking
         bytes_remaining = (unsigned int)(block & 0x000000007fffffff);
 
-        //cout << "\nbytes_remaining = " << bytes_remaining << endl;
-
+        // read, decrypt, and write until no more bytes left
         while(bytes_remaining){
             readBlock();
+            ++currentBlock;
+            cout << "\rDecrypting block " << currentBlock << " of " << (infile_byte_length >> 3);
             // TODO decrypt block
             writeBlock();
         }
-
     }
 
     // TODO print out time statistics
@@ -314,6 +322,185 @@ int main(int argc, char *argv[]) {
     cout << "\nDone." << endl;
 
     return 0;
+}
+
+// Data Encryption Standard
+//
+void DES(){
+
+    // ------------------------------------------------------------------------
+    // Initial Permutation
+    // ------------------------------------------------------------------------
+
+    uint64_t initial_permutation = 0ULL;
+
+    //6666655555555554444444444333333333322222222221111111111
+    //4321098765432109876543210987654321098765432109876543210987654321
+    //0000000000000000000000001000000000000000000000000000000000000000
+    //666655555555554444444444333333333322222222221111111111
+    //3210987654321098765432109876543210987654321098765432109876543210
+
+    if(block & (1ULL << 63)) initial_permutation |= (1ULL << 39);
+    if(block & (1ULL << 62)) initial_permutation |= (1ULL << 7);
+    if(block & (1ULL << 61)) initial_permutation |= (1ULL << 47);
+    if(block & (1ULL << 60)) initial_permutation |= (1ULL << 15);
+    if(block & (1ULL << 59)) initial_permutation |= (1ULL << 55);
+    if(block & (1ULL << 58)) initial_permutation |= (1ULL << 23);
+    if(block & (1ULL << 57)) initial_permutation |= (1ULL << 63);
+    if(block & (1ULL << 56)) initial_permutation |= (1ULL << 31);
+    if(block & (1ULL << 55)) initial_permutation |= (1ULL << 38);
+    if(block & (1ULL << 54)) initial_permutation |= (1ULL << 6);
+    if(block & (1ULL << 53)) initial_permutation |= (1ULL << 46);
+    if(block & (1ULL << 52)) initial_permutation |= (1ULL << 14);
+    if(block & (1ULL << 51)) initial_permutation |= (1ULL << 54);
+    if(block & (1ULL << 50)) initial_permutation |= (1ULL << 22);
+    if(block & (1ULL << 49)) initial_permutation |= (1ULL << 62);
+    if(block & (1ULL << 48)) initial_permutation |= (1ULL << 30);
+
+    if(block & (1ULL << 47)) initial_permutation |= (1ULL << 37);
+    if(block & (1ULL << 46)) initial_permutation |= (1ULL << 5);
+    if(block & (1ULL << 45)) initial_permutation |= (1ULL << 45);
+    if(block & (1ULL << 44)) initial_permutation |= (1ULL << 13);
+    if(block & (1ULL << 43)) initial_permutation |= (1ULL << 53);
+    if(block & (1ULL << 42)) initial_permutation |= (1ULL << 21);
+    if(block & (1ULL << 41)) initial_permutation |= (1ULL << 61);
+    if(block & (1ULL << 40)) initial_permutation |= (1ULL << 29);
+    if(block & (1ULL << 39)) initial_permutation |= (1ULL << 36);
+    if(block & (1ULL << 38)) initial_permutation |= (1ULL << 4);
+    if(block & (1ULL << 37)) initial_permutation |= (1ULL << 44);
+    if(block & (1ULL << 36)) initial_permutation |= (1ULL << 12);
+    if(block & (1ULL << 35)) initial_permutation |= (1ULL << 52);
+    if(block & (1ULL << 34)) initial_permutation |= (1ULL << 20);
+    if(block & (1ULL << 33)) initial_permutation |= (1ULL << 60);
+    if(block & (1ULL << 32)) initial_permutation |= (1ULL << 28);
+
+    if(block & (1ULL << 31)) initial_permutation |= (1ULL << 35);
+    if(block & (1ULL << 30)) initial_permutation |= (1ULL << 3);
+    if(block & (1ULL << 29)) initial_permutation |= (1ULL << 43);
+    if(block & (1ULL << 28)) initial_permutation |= (1ULL << 11);
+    if(block & (1ULL << 27)) initial_permutation |= (1ULL << 51);
+    if(block & (1ULL << 26)) initial_permutation |= (1ULL << 19);
+    if(block & (1ULL << 25)) initial_permutation |= (1ULL << 59);
+    if(block & (1ULL << 24)) initial_permutation |= (1ULL << 27);
+    if(block & (1ULL << 23)) initial_permutation |= (1ULL << 34);
+    if(block & (1ULL << 22)) initial_permutation |= (1ULL << 2);
+    if(block & (1ULL << 21)) initial_permutation |= (1ULL << 42);
+    if(block & (1ULL << 20)) initial_permutation |= (1ULL << 10);
+    if(block & (1ULL << 19)) initial_permutation |= (1ULL << 50);
+    if(block & (1ULL << 18)) initial_permutation |= (1ULL << 18);
+    if(block & (1ULL << 17)) initial_permutation |= (1ULL << 58);
+    if(block & (1ULL << 16)) initial_permutation |= (1ULL << 26);
+
+    if(block & (1ULL << 15)) initial_permutation |= (1ULL << 33);
+    if(block & (1ULL << 14)) initial_permutation |= (1ULL << 1);
+    if(block & (1ULL << 13)) initial_permutation |= (1ULL << 41);
+    if(block & (1ULL << 12)) initial_permutation |= (1ULL << 9);
+    if(block & (1ULL << 11)) initial_permutation |= (1ULL << 49);
+    if(block & (1ULL << 10)) initial_permutation |= (1ULL << 17);
+    if(block & (1ULL << 9)) initial_permutation |= (1ULL << 57);
+    if(block & (1ULL << 8)) initial_permutation |= (1ULL << 25);
+    if(block & (1ULL << 7)) initial_permutation |= (1ULL << 32);
+    if(block & (1ULL << 6)) initial_permutation |= (1ULL << 0);
+    if(block & (1ULL << 5)) initial_permutation |= (1ULL << 40);
+    if(block & (1ULL << 4)) initial_permutation |= (1ULL << 8);
+    if(block & (1ULL << 3)) initial_permutation |= (1ULL << 48);
+    if(block & (1ULL << 2)) initial_permutation |= (1ULL << 16);
+    if(block & (1ULL << 1)) initial_permutation |= (1ULL << 56);
+    if(block & (1ULL << 0)) initial_permutation |= (1ULL << 24);
+
+
+
+
+
+
+
+    // ------------------------------------------------------------------------
+    // Final Permutation
+    // ------------------------------------------------------------------------
+
+    uint64_t final_permutation = 0ULL;
+
+    uint64_t temp = initial_permutation;
+
+    if(temp & (1ULL << 63)) final_permutation |= (1ULL << 57);
+    if(temp & (1ULL << 62)) final_permutation |= (1ULL << 49);
+    if(temp & (1ULL << 61)) final_permutation |= (1ULL << 41);
+    if(temp & (1ULL << 60)) final_permutation |= (1ULL << 33);
+    if(temp & (1ULL << 59)) final_permutation |= (1ULL << 25);
+    if(temp & (1ULL << 58)) final_permutation |= (1ULL << 17);
+    if(temp & (1ULL << 57)) final_permutation |= (1ULL << 9);
+    if(temp & (1ULL << 56)) final_permutation |= (1ULL << 1);
+    if(temp & (1ULL << 55)) final_permutation |= (1ULL << 59);
+    if(temp & (1ULL << 54)) final_permutation |= (1ULL << 51);
+    if(temp & (1ULL << 53)) final_permutation |= (1ULL << 43);
+    if(temp & (1ULL << 52)) final_permutation |= (1ULL << 35);
+    if(temp & (1ULL << 51)) final_permutation |= (1ULL << 27);
+    if(temp & (1ULL << 50)) final_permutation |= (1ULL << 19);
+    if(temp & (1ULL << 49)) final_permutation |= (1ULL << 11);
+    if(temp & (1ULL << 48)) final_permutation |= (1ULL << 3);
+
+    if(temp & (1ULL << 47)) final_permutation |= (1ULL << 61);
+    if(temp & (1ULL << 46)) final_permutation |= (1ULL << 53);
+    if(temp & (1ULL << 45)) final_permutation |= (1ULL << 45);
+    if(temp & (1ULL << 44)) final_permutation |= (1ULL << 37);
+    if(temp & (1ULL << 43)) final_permutation |= (1ULL << 29);
+    if(temp & (1ULL << 42)) final_permutation |= (1ULL << 21);
+    if(temp & (1ULL << 41)) final_permutation |= (1ULL << 13);
+    if(temp & (1ULL << 40)) final_permutation |= (1ULL << 5);
+    if(temp & (1ULL << 39)) final_permutation |= (1ULL << 63);
+    if(temp & (1ULL << 38)) final_permutation |= (1ULL << 55);
+    if(temp & (1ULL << 37)) final_permutation |= (1ULL << 47);
+    if(temp & (1ULL << 36)) final_permutation |= (1ULL << 39);
+    if(temp & (1ULL << 35)) final_permutation |= (1ULL << 31);
+    if(temp & (1ULL << 34)) final_permutation |= (1ULL << 23);
+    if(temp & (1ULL << 33)) final_permutation |= (1ULL << 15);
+    if(temp & (1ULL << 32)) final_permutation |= (1ULL << 7);
+
+    if(temp & (1ULL << 31)) final_permutation |= (1ULL << 56);
+    if(temp & (1ULL << 30)) final_permutation |= (1ULL << 48);
+    if(temp & (1ULL << 29)) final_permutation |= (1ULL << 40);
+    if(temp & (1ULL << 28)) final_permutation |= (1ULL << 32);
+    if(temp & (1ULL << 27)) final_permutation |= (1ULL << 24);
+    if(temp & (1ULL << 26)) final_permutation |= (1ULL << 16);
+    if(temp & (1ULL << 25)) final_permutation |= (1ULL << 8);
+    if(temp & (1ULL << 24)) final_permutation |= (1ULL << 0);
+    if(temp & (1ULL << 23)) final_permutation |= (1ULL << 58);
+    if(temp & (1ULL << 22)) final_permutation |= (1ULL << 50);
+    if(temp & (1ULL << 21)) final_permutation |= (1ULL << 42);
+    if(temp & (1ULL << 20)) final_permutation |= (1ULL << 34);
+    if(temp & (1ULL << 19)) final_permutation |= (1ULL << 26);
+    if(temp & (1ULL << 18)) final_permutation |= (1ULL << 18);
+    if(temp & (1ULL << 17)) final_permutation |= (1ULL << 10);
+    if(temp & (1ULL << 16)) final_permutation |= (1ULL << 2);
+
+    if(temp & (1ULL << 15)) final_permutation |= (1ULL << 60);
+    if(temp & (1ULL << 14)) final_permutation |= (1ULL << 52);
+    if(temp & (1ULL << 13)) final_permutation |= (1ULL << 44);
+    if(temp & (1ULL << 12)) final_permutation |= (1ULL << 36);
+    if(temp & (1ULL << 11)) final_permutation |= (1ULL << 28);
+    if(temp & (1ULL << 10)) final_permutation |= (1ULL << 20);
+    if(temp & (1ULL << 9)) final_permutation |= (1ULL << 12);
+    if(temp & (1ULL << 8)) final_permutation |= (1ULL << 4);
+    if(temp & (1ULL << 7)) final_permutation |= (1ULL << 62);
+    if(temp & (1ULL << 6)) final_permutation |= (1ULL << 54);
+    if(temp & (1ULL << 5)) final_permutation |= (1ULL << 46);
+    if(temp & (1ULL << 4)) final_permutation |= (1ULL << 38);
+    if(temp & (1ULL << 3)) final_permutation |= (1ULL << 30);
+    if(temp & (1ULL << 2)) final_permutation |= (1ULL << 22);
+    if(temp & (1ULL << 1)) final_permutation |= (1ULL << 14);
+    if(temp & (1ULL << 0)) final_permutation |= (1ULL << 6);
+
+
+
+    if(final_permutation != block) {cout << "\nFinal permutation != block."; exit(0);}
+    block = final_permutation;
+
+    // ------------------------------------------------------------------------
+    // TODO
+    // ------------------------------------------------------------------------
+
+
+
 }
 
 // read 8 bytes from <infile> and places them in the global block variable
