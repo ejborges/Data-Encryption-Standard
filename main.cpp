@@ -39,6 +39,55 @@ uint64_t infile_byte_length;
 unsigned int bytes_remaining;   // number of bytes yet to be read
 uint64_t roundkey[16];            // storage for the sixteen 48 bit sub keys used throughout DES's sixteen cycles
 
+const int s1[4][16] = {
+        {14, 4,13, 1, 2,15,11, 8, 3,10, 6,12, 5, 9, 0, 7},
+        { 0,15, 7, 4,14, 2,13, 1,10, 6,12,11, 9, 5, 3, 8},
+        { 4, 1,14, 8,13, 6, 2,11,15,12, 9, 7, 3,10, 5, 0},
+        {15,12, 8, 2, 4, 9, 1, 7, 5,11, 3,14,10, 0, 6,13}
+};
+const int s2[4][16] = {
+        {15, 1, 8,14, 6,11, 3, 4, 9, 7, 2,13,12, 0, 5,10},
+        { 3,13, 4, 7,15, 2, 8,14,12, 0, 1,10, 6, 9,11, 5},
+        { 0,14, 7,11,10, 4,13, 1, 5, 8,12, 6, 9, 3, 2,15},
+        {13, 8,10, 1, 3,15, 4, 2,11, 6, 7,12, 0, 5,14, 9}
+};
+const int s3[4][16] = {
+        {10, 0, 9,14, 6, 3,15, 5, 1,13,12, 7,11, 4, 2, 8},
+        {13, 7, 0, 9, 3, 4, 6,10, 2, 8, 5,14,12,11,15, 1},
+        {13, 6, 4, 9, 8,15, 3, 0,11, 1, 2,12, 5,10,14, 7},
+        { 1,10,13, 0, 6, 9, 8, 7, 4,15,14, 3,11, 5, 2,12}
+};
+const int s4[4][16] = {
+        { 7,13,14, 3, 0, 6, 9,10, 1, 2, 8, 5,11,12, 4,15},
+        {13, 8,11, 5, 6,15, 0, 3, 4, 7, 2,12, 1,10,14, 9},
+        {10, 6, 9, 0,12,11, 7,13,15, 1, 3,14, 5, 2, 8, 4},
+        { 3,15, 0, 6,10, 1,13, 8, 9, 4, 5,11,12, 7, 2,14}
+};
+const int s5[4][16] = {
+        { 2,12, 4, 1, 7,10,11, 6, 8, 5, 3,15,13, 0,14, 9},
+        {14,11, 2,12, 4, 7,13, 1, 5, 0,15,10, 3, 9, 8, 6},
+        { 4, 2, 1,11,10,13, 7, 8,15, 9,12, 5, 6, 3, 0,14},
+        {11, 8,12, 7, 1,14, 2,13, 6,15, 0, 9,10, 4, 5, 3}
+};
+const int s6[4][16] = {
+        {12, 1,10,15, 9, 2, 6, 8, 0,13, 3, 4,14, 7, 5,11},
+        {10,15, 4, 2, 7,12, 9, 5, 6, 1,13,14, 0,11, 3, 8},
+        { 9,14,15, 5, 2, 8,12, 3, 7, 0, 4,10, 1,13,11, 6},
+        { 4, 3, 2,12, 9, 5,15,10,11,14, 1, 7, 6, 0, 8,13}
+};
+const int s7[4][16] = {
+        { 4,11, 2,14,15, 0, 8,13, 3,12, 9, 7, 5,10, 6, 1},
+        {13, 0,11, 7, 4, 9, 1,10,14, 3, 5,12, 2,15, 8, 6},
+        { 1, 4,11,13,12, 3, 7,14,10,15, 6, 8, 0, 5, 9, 2},
+        { 6,11,13, 8, 1, 4,10, 7, 9, 5, 0,15,14, 2, 3,12}
+};
+const int s8[4][16] = {
+        {13, 2, 8, 4, 6,15,11, 1,10, 9, 3,14, 5, 0,12, 7},
+        { 1,15,13, 8,10, 3, 7, 4,12, 5, 6,11, 0,14, 9, 2},
+        { 7,11, 4, 1, 9,12,14, 2, 0, 6,10,13,15, 3, 5, 8},
+        { 2, 1,14, 7, 4,10, 8,13,15,12, 9, 0, 3, 5, 6,11}
+};
+
 // function input/output defined with function definition
 void print64(uint64_t &value, char type);
 void readBlock();
@@ -519,6 +568,55 @@ int main(int argc, char *argv[]) {
 
     cout << "\nDone." << endl;
 
+
+
+//    const unsigned char test[2][2] = {
+//            {'z','y'},
+//            {'x','w'}
+//    };
+
+//    cout << "\ntest = " << test;
+//    cout << "\n*test = " << *test;
+//    cout << "\n**test = " << **test;
+//    cout << "\n*(test + 1) = " << *(test + 1);
+//    cout << "\n*(*(test + 1) + 1) = " << *(*(test + 1) + 0) << endl;
+//
+//    cout << "\n*(*(s1 + 0) + 0) = " << *(*(s1 + 0) + 0);
+
+
+//    for(int s = 1; s < 9; ++s){
+//        for(int i = 0; i < 4; ++i){
+//            int sum = 0;
+//            for(int j = 0; j < 16; ++j){
+//                if(s == 1) sum += *(*(s1 + i) + j);
+//                if(s == 2) sum += *(*(s2 + i) + j);
+//                if(s == 3) sum += *(*(s3 + i) + j);
+//                if(s == 4) sum += *(*(s4 + i) + j);
+//                if(s == 5) sum += *(*(s5 + i) + j);
+//                if(s == 6) sum += *(*(s6 + i) + j);
+//                if(s == 7) sum += *(*(s7 + i) + j);
+//                if(s == 8) sum += *(*(s8 + i) + j);
+//            }
+//            if(sum != (1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15)){
+//                if(s == 1) cout << "\ns1[";
+//                if(s == 2) cout << "\ns2[";
+//                if(s == 3) cout << "\ns3[";
+//                if(s == 4) cout << "\ns4[";
+//                if(s == 5) cout << "\ns5[";
+//                if(s == 6) cout << "\ns6[";
+//                if(s == 7) cout << "\ns7[";
+//                if(s == 8) cout << "\ns8[";
+//                cout << i << "] does not add up!";
+//                break;
+//            }
+//        }
+//    }
+
+
+
+
+
+
     return 0;
 }
 
@@ -617,45 +715,54 @@ void DES(){
     // TODO 16 Rounds
     // ------------------------------------------------------------------------
 
-    // Split 64 bit input into left and right 32 bit halves
-    uint32_t left32  = (uint32_t)(initial_permutation >> 32);
-    uint32_t right32 = (uint32_t)(initial_permutation & 0x00000000ffffffff);
+    for(int i = 0; i < 16; ++i){
+        // Split 64 bit input into left and right 32 bit halves
+        uint32_t left32  = (uint32_t)(initial_permutation >> 32);
+        uint32_t right32 = (uint32_t)(initial_permutation & 0x00000000ffffffff);
 
-    // Expand 32 bit right half into 48 bit permuted right half
-    uint64_t right48 = 0ULL;
-    if(right32 & (1ULL << 31)) {right48 |= (1ULL << (48 - 2)); right48 |= (1ULL << (48 - 48));}
-    if(right32 & (1ULL << 30))  right48 |= (1ULL << (48 - 3));
-    if(right32 & (1ULL << 29))  right48 |= (1ULL << (48 - 4));
-    if(right32 & (1ULL << 28)) {right48 |= (1ULL << (48 - 5)); right48 |= (1ULL << (48 - 7));}
-    if(right32 & (1ULL << 27)) {right48 |= (1ULL << (48 - 6)); right48 |= (1ULL << (48 - 8));}
-    if(right32 & (1ULL << 26))  right48 |= (1ULL << (48 - 9));
-    if(right32 & (1ULL << 25))  right48 |= (1ULL << (48 - 10));
-    if(right32 & (1ULL << 24)) {right48 |= (1ULL << (48 - 11)); right48 |= (1ULL << (48 - 13));}
-    if(right32 & (1ULL << 23)) {right48 |= (1ULL << (48 - 12)); right48 |= (1ULL << (48 - 14));}
-    if(right32 & (1ULL << 22))  right48 |= (1ULL << (48 - 15));
-    if(right32 & (1ULL << 21))  right48 |= (1ULL << (48 - 16));
-    if(right32 & (1ULL << 20)) {right48 |= (1ULL << (48 - 17)); right48 |= (1ULL << (48 - 19));}
-    if(right32 & (1ULL << 19)) {right48 |= (1ULL << (48 - 18)); right48 |= (1ULL << (48 - 20));}
-    if(right32 & (1ULL << 18))  right48 |= (1ULL << (48 - 21));
-    if(right32 & (1ULL << 17))  right48 |= (1ULL << (48 - 22));
-    if(right32 & (1ULL << 16)) {right48 |= (1ULL << (48 - 23)); right48 |= (1ULL << (48 - 25));}
-    if(right32 & (1ULL << 15)) {right48 |= (1ULL << (48 - 24)); right48 |= (1ULL << (48 - 26));}
-    if(right32 & (1ULL << 14))  right48 |= (1ULL << (48 - 27));
-    if(right32 & (1ULL << 13))  right48 |= (1ULL << (48 - 28));
-    if(right32 & (1ULL << 12)) {right48 |= (1ULL << (48 - 29)); right48 |= (1ULL << (48 - 31));}
-    if(right32 & (1ULL << 11)) {right48 |= (1ULL << (48 - 30)); right48 |= (1ULL << (48 - 32));}
-    if(right32 & (1ULL << 10))  right48 |= (1ULL << (48 - 33));
-    if(right32 & (1ULL << 9))  right48 |= (1ULL << (48 - 34));
-    if(right32 & (1ULL << 8)) {right48 |= (1ULL << (48 - 35)); right48 |= (1ULL << (48 - 37));}
-    if(right32 & (1ULL << 7)) {right48 |= (1ULL << (48 - 36)); right48 |= (1ULL << (48 - 38));}
-    if(right32 & (1ULL << 6))  right48 |= (1ULL << (48 - 39));
-    if(right32 & (1ULL << 5))  right48 |= (1ULL << (48 - 40));
-    if(right32 & (1ULL << 4)) {right48 |= (1ULL << (48 - 41)); right48 |= (1ULL << (48 - 43));}
-    if(right32 & (1ULL << 3)) {right48 |= (1ULL << (48 - 42)); right48 |= (1ULL << (48 - 44));}
-    if(right32 & (1ULL << 2))  right48 |= (1ULL << (48 - 45));
-    if(right32 & (1ULL << 1))  right48 |= (1ULL << (48 - 46));
-    if(right32 & (1ULL << 0)) {right48 |= (1ULL << (48 - 47)); right48 |= (1ULL << (48 - 1));}
+        // Expand 32 bit right half into 48 bit permuted right half
+        uint64_t right48 = 0ULL;
+        if(right32 & (1ULL << 31)) {right48 |= (1ULL << (48 - 2)); right48 |= (1ULL << (48 - 48));}
+        if(right32 & (1ULL << 30))  right48 |= (1ULL << (48 - 3));
+        if(right32 & (1ULL << 29))  right48 |= (1ULL << (48 - 4));
+        if(right32 & (1ULL << 28)) {right48 |= (1ULL << (48 - 5)); right48 |= (1ULL << (48 - 7));}
+        if(right32 & (1ULL << 27)) {right48 |= (1ULL << (48 - 6)); right48 |= (1ULL << (48 - 8));}
+        if(right32 & (1ULL << 26))  right48 |= (1ULL << (48 - 9));
+        if(right32 & (1ULL << 25))  right48 |= (1ULL << (48 - 10));
+        if(right32 & (1ULL << 24)) {right48 |= (1ULL << (48 - 11)); right48 |= (1ULL << (48 - 13));}
+        if(right32 & (1ULL << 23)) {right48 |= (1ULL << (48 - 12)); right48 |= (1ULL << (48 - 14));}
+        if(right32 & (1ULL << 22))  right48 |= (1ULL << (48 - 15));
+        if(right32 & (1ULL << 21))  right48 |= (1ULL << (48 - 16));
+        if(right32 & (1ULL << 20)) {right48 |= (1ULL << (48 - 17)); right48 |= (1ULL << (48 - 19));}
+        if(right32 & (1ULL << 19)) {right48 |= (1ULL << (48 - 18)); right48 |= (1ULL << (48 - 20));}
+        if(right32 & (1ULL << 18))  right48 |= (1ULL << (48 - 21));
+        if(right32 & (1ULL << 17))  right48 |= (1ULL << (48 - 22));
+        if(right32 & (1ULL << 16)) {right48 |= (1ULL << (48 - 23)); right48 |= (1ULL << (48 - 25));}
+        if(right32 & (1ULL << 15)) {right48 |= (1ULL << (48 - 24)); right48 |= (1ULL << (48 - 26));}
+        if(right32 & (1ULL << 14))  right48 |= (1ULL << (48 - 27));
+        if(right32 & (1ULL << 13))  right48 |= (1ULL << (48 - 28));
+        if(right32 & (1ULL << 12)) {right48 |= (1ULL << (48 - 29)); right48 |= (1ULL << (48 - 31));}
+        if(right32 & (1ULL << 11)) {right48 |= (1ULL << (48 - 30)); right48 |= (1ULL << (48 - 32));}
+        if(right32 & (1ULL << 10))  right48 |= (1ULL << (48 - 33));
+        if(right32 & (1ULL << 9))  right48 |= (1ULL << (48 - 34));
+        if(right32 & (1ULL << 8)) {right48 |= (1ULL << (48 - 35)); right48 |= (1ULL << (48 - 37));}
+        if(right32 & (1ULL << 7)) {right48 |= (1ULL << (48 - 36)); right48 |= (1ULL << (48 - 38));}
+        if(right32 & (1ULL << 6))  right48 |= (1ULL << (48 - 39));
+        if(right32 & (1ULL << 5))  right48 |= (1ULL << (48 - 40));
+        if(right32 & (1ULL << 4)) {right48 |= (1ULL << (48 - 41)); right48 |= (1ULL << (48 - 43));}
+        if(right32 & (1ULL << 3)) {right48 |= (1ULL << (48 - 42)); right48 |= (1ULL << (48 - 44));}
+        if(right32 & (1ULL << 2))  right48 |= (1ULL << (48 - 45));
+        if(right32 & (1ULL << 1))  right48 |= (1ULL << (48 - 46));
+        if(right32 & (1ULL << 0)) {right48 |= (1ULL << (48 - 47)); right48 |= (1ULL << (48 - 1));}
 
+        // Mixer step; mix right48 with appropriate 48 bit roundkey[]
+        // mix keys forwards if encrypting, backwards if decrypting
+        if(encrypt) right48 ^= roundkey[i];
+        else        right48 ^= roundkey[15 - i];
+
+        right32 = 0;
+
+    }
 
 
 
