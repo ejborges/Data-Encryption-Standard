@@ -453,7 +453,6 @@ int main(int argc, char *argv[]) {
         #endif
     }
 
-
     // ------------------------------------------------------------------------
     // Encrypt or Decrypt?
     // ------------------------------------------------------------------------
@@ -521,7 +520,7 @@ int main(int argc, char *argv[]) {
 
         cout << "\nEncrypting..." << endl;
 
-        // TODO encrypt block
+        // Encrypt block
         DES();
 
         // write encrypted block (containing 33 bits of garbage and 31 bits of file length) to <outfile>
@@ -529,8 +528,7 @@ int main(int argc, char *argv[]) {
 
         while(bytes_remaining){
             readBlock();
-            // TODO encrypt block
-            DES();
+            DES(); // Encrypt block
             writeBlock();
         }
     }
@@ -542,80 +540,38 @@ int main(int argc, char *argv[]) {
         if(infile_byte_length < 8) {cout << "\nInput file size too small. Exiting DES."; return 0;}
         if(infile_byte_length % 8) {cout << "\nInput file size not multiple of 8. Exiting DES."; return 0;}
 
-        cout << "\nDecrypting block 0 of " << (infile_byte_length >> 3);
-        unsigned int currentBlock = 0;
-
         // read first block containing original file length
         readBlock();
 
-        // comment
-        // TODO decrypt block
+        // Decrypt block
+        DES();
 
         // extract file length value by bit masking
         bytes_remaining = (unsigned int)(block & 0x000000007fffffff);
 
+        // verify decrypted file length makes sense
+        if(bytes_remaining > (infile_byte_length - 8))
+            {cout << "\nError with decrypted file length. Exiting DES."; return 0;}
+
+        unsigned int total_bytes = bytes_remaining;
+        #ifdef DEBUG
+        cout << "\n\tDecrypting " << total_bytes << " bytes (" << ceil(total_bytes / 8) << " blocks)\n";
+        #endif
+
         // read, decrypt, and write until no more bytes left
         while(bytes_remaining){
             readBlock();
-            ++currentBlock;
-            cout << "\rDecrypting block " << currentBlock << " of " << (infile_byte_length >> 3);
-            // TODO decrypt block
+            #ifdef DEBUG
+            cout << "\r\tDecrypting block " << ceil(total_bytes / 8);
+            #endif
+            DES(); // Decrypt block
             writeBlock();
         }
     }
 
     // TODO print out time statistics
 
-    cout << "\nDone." << endl;
-
-
-
-//    const unsigned char test[2][2] = {
-//            {'z','y'},
-//            {'x','w'}
-//    };
-
-//    cout << "\ntest = " << test;
-//    cout << "\n*test = " << *test;
-//    cout << "\n**test = " << **test;
-//    cout << "\n*(test + 1) = " << *(test + 1);
-//    cout << "\n*(*(test + 1) + 1) = " << *(*(test + 1) + 0) << endl;
-//
-//    cout << "\n*(*(s1 + 0) + 0) = " << *(*(s1 + 0) + 0);
-
-
-//    for(int s = 1; s < 9; ++s){
-//        for(int i = 0; i < 4; ++i){
-//            int sum = 0;
-//            for(int j = 0; j < 16; ++j){
-//                if(s == 1) sum += *(*(s1 + i) + j);
-//                if(s == 2) sum += *(*(s2 + i) + j);
-//                if(s == 3) sum += *(*(s3 + i) + j);
-//                if(s == 4) sum += *(*(s4 + i) + j);
-//                if(s == 5) sum += *(*(s5 + i) + j);
-//                if(s == 6) sum += *(*(s6 + i) + j);
-//                if(s == 7) sum += *(*(s7 + i) + j);
-//                if(s == 8) sum += *(*(s8 + i) + j);
-//            }
-//            if(sum != (1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15)){
-//                if(s == 1) cout << "\ns1[";
-//                if(s == 2) cout << "\ns2[";
-//                if(s == 3) cout << "\ns3[";
-//                if(s == 4) cout << "\ns4[";
-//                if(s == 5) cout << "\ns5[";
-//                if(s == 6) cout << "\ns6[";
-//                if(s == 7) cout << "\ns7[";
-//                if(s == 8) cout << "\ns8[";
-//                cout << i << "] does not add up!";
-//                break;
-//            }
-//        }
-//    }
-
-
-
-
-
+    cout << "\nDone" << endl;
 
     return 0;
 }
@@ -636,12 +592,6 @@ void DES(){
     // ------------------------------------------------------------------------
 
     uint64_t initial_permutation = 0ULL;
-
-    //6666655555555554444444444333333333322222222221111111111
-    //4321098765432109876543210987654321098765432109876543210987654321
-    //0000000000000000000000001000000000000000000000000000000000000000
-    //666655555555554444444444333333333322222222221111111111
-    //3210987654321098765432109876543210987654321098765432109876543210
 
     if(block & (1ULL << 63)) initial_permutation |= (1ULL << (64 - 40));
     if(block & (1ULL << 62)) initial_permutation |= (1ULL << (64 - 8));
@@ -712,13 +662,19 @@ void DES(){
     if(block & (1ULL << 0)) initial_permutation |= (1ULL << (64 - 25));
 
     // ------------------------------------------------------------------------
-    // TODO 16 Rounds
+    // Go through the 16 Rounds
     // ------------------------------------------------------------------------
 
-    for(int i = 0; i < 16; ++i){
+    uint32_t left32;
+    uint32_t right32;
+    uint32_t saved_right32;
+    uint64_t rounds_block = initial_permutation;
+
+    for(int round = 0; round < 16; ++round){
         // Split 64 bit input into left and right 32 bit halves
-        uint32_t left32  = (uint32_t)(initial_permutation >> 32);
-        uint32_t right32 = (uint32_t)(initial_permutation & 0x00000000ffffffff);
+        left32  = (uint32_t)(rounds_block >> 32);
+        right32 = (uint32_t)(rounds_block & 0x00000000ffffffff);
+        saved_right32 = right32;
 
         // Expand 32 bit right half into 48 bit permuted right half
         uint64_t right48 = 0ULL;
@@ -757,102 +713,177 @@ void DES(){
 
         // Mixer step; mix right48 with appropriate 48 bit roundkey[]
         // mix keys forwards if encrypting, backwards if decrypting
-        if(encrypt) right48 ^= roundkey[i];
-        else        right48 ^= roundkey[15 - i];
+        if(encrypt) right48 ^= roundkey[round];
+        else        right48 ^= roundkey[15 - round];
 
         right32 = 0;
 
+//        cout << "\nright48 = ";
+//        print64(right48, 'b');
+//        cout << "\n        = ";
+//        print64(right48, 'x');
+
+        // Substitution boxes (S-Boxes)
+        // 1) Divide the 48 bit right half into eight 6 bit chunks
+        // 2) Each s-box (s1, s2, ...) has 4 rows (0 thru 3) and 16 columns (0 thru 15)
+        // 3) Take first and last bit of each chunk to determine row, middle 4 bits determine column
+        //    ex. abcdef = a bcde f = af bcde
+        //    ex. 110100 = 1 1010 0 = 10 1010 = value at row 2 col 10 for specific s-box
+        // 4) Use *(*(s1 + i) + j); returns the value at row i col j from s1 (faster? than s1[i][j] if using unoptimized compiler)
+        // 5) shift value returned by appropriate s-box into appropriate location in 32 bit right half block
+        right32 |= (uint32_t)(*(*(s1 + (((right48 >> 46) & 0b10) | ((right48 >> 42) & 0b000001))) + ((right48 >> 43) & 0b01111))) << 28;
+        right32 |= (uint32_t)(*(*(s2 + (((right48 >> 40) & 0b10) | ((right48 >> 36) & 0b000001))) + ((right48 >> 37) & 0b01111))) << 24;
+        right32 |= (uint32_t)(*(*(s3 + (((right48 >> 34) & 0b10) | ((right48 >> 30) & 0b000001))) + ((right48 >> 31) & 0b01111))) << 20;
+        right32 |= (uint32_t)(*(*(s4 + (((right48 >> 28) & 0b10) | ((right48 >> 24) & 0b000001))) + ((right48 >> 25) & 0b01111))) << 16;
+        right32 |= (uint32_t)(*(*(s5 + (((right48 >> 22) & 0b10) | ((right48 >> 18) & 0b000001))) + ((right48 >> 19) & 0b01111))) << 12;
+        right32 |= (uint32_t)(*(*(s6 + (((right48 >> 16) & 0b10) | ((right48 >> 12) & 0b000001))) + ((right48 >> 13) & 0b01111))) << 8;
+        right32 |= (uint32_t)(*(*(s7 + (((right48 >> 10) & 0b10) | ((right48 >> 6) & 0b000001))) + ((right48 >> 7) & 0b01111))) << 4;
+        right32 |= (uint32_t)(*(*(s8 + (((right48 >> 4) & 0b10) | ((right48) & 0b000001))) + ((right48 >> 1) & 0b01111)));
+
+//        right32 |= (uint32_t)(s1[(((right48 >> 46) & 0b10) | ((right48 >> 42) & 0b000001))][((right48 >> 43) & 0b01111)]) << 28;
+//        right32 |= (uint32_t)(s2[(((right48 >> 40) & 0b10) | ((right48 >> 36) & 0b000001))][((right48 >> 37) & 0b01111)]) << 24;
+//        right32 |= (uint32_t)(s3[(((right48 >> 34) & 0b10) | ((right48 >> 30) & 0b000001))][((right48 >> 31) & 0b01111)]) << 20;
+//        right32 |= (uint32_t)(s4[(((right48 >> 28) & 0b10) | ((right48 >> 24) & 0b000001))][((right48 >> 25) & 0b01111)]) << 16;
+//        right32 |= (uint32_t)(s5[(((right48 >> 22) & 0b10) | ((right48 >> 18) & 0b000001))][((right48 >> 19) & 0b01111)]) << 12;
+//        right32 |= (uint32_t)(s6[(((right48 >> 16) & 0b10) | ((right48 >> 12) & 0b000001))][((right48 >> 13) & 0b01111)]) << 8;
+//        right32 |= (uint32_t)(s7[(((right48 >> 10) & 0b10) | ((right48 >> 6) & 0b000001))][((right48 >> 7) & 0b01111)]) << 4;
+//        right32 |= (uint32_t)(s8[(((right48 >> 4) & 0b10) | ((right48) & 0b000001))][((right48 >> 1) & 0b01111)]);
+
+//        uint64_t temp32 = right32;
+//        cout << "\nright32 = ";
+//        print64(temp32, 'b');
+//        cout << "\n        = ";
+//        print64(temp32, 'x');
+//        cout << endl << endl;
+
+        // Post S-Box right side permutation
+        uint32_t temp = right32;
+        right32 = 0;
+        if(temp & (1ULL << 31)) right32 |= (1ULL << (32 - 9));
+        if(temp & (1ULL << 30)) right32 |= (1ULL << (32 - 17));
+        if(temp & (1ULL << 29)) right32 |= (1ULL << (32 - 23));
+        if(temp & (1ULL << 28)) right32 |= (1ULL << (32 - 31));
+        if(temp & (1ULL << 27)) right32 |= (1ULL << (32 - 13));
+        if(temp & (1ULL << 26)) right32 |= (1ULL << (32 - 28));
+        if(temp & (1ULL << 25)) right32 |= (1ULL << (32 - 2));
+        if(temp & (1ULL << 24)) right32 |= (1ULL << (32 - 18));
+        if(temp & (1ULL << 23)) right32 |= (1ULL << (32 - 24));
+        if(temp & (1ULL << 22)) right32 |= (1ULL << (32 - 16));
+        if(temp & (1ULL << 21)) right32 |= (1ULL << (32 - 30));
+        if(temp & (1ULL << 20)) right32 |= (1ULL << (32 - 6));
+        if(temp & (1ULL << 19)) right32 |= (1ULL << (32 - 26));
+        if(temp & (1ULL << 18)) right32 |= (1ULL << (32 - 20));
+        if(temp & (1ULL << 17)) right32 |= (1ULL << (32 - 10));
+        if(temp & (1ULL << 16)) right32 |= (1ULL << (32 - 1));
+
+        if(temp & (1ULL << 15)) right32 |= (1ULL << (32 - 8));
+        if(temp & (1ULL << 14)) right32 |= (1ULL << (32 - 14));
+        if(temp & (1ULL << 13)) right32 |= (1ULL << (32 - 25));
+        if(temp & (1ULL << 12)) right32 |= (1ULL << (32 - 3));
+        if(temp & (1ULL << 11)) right32 |= (1ULL << (32 - 4));
+        if(temp & (1ULL << 10)) right32 |= (1ULL << (32 - 29));
+        if(temp & (1ULL << 9)) right32 |= (1ULL << (32 - 11));
+        if(temp & (1ULL << 8)) right32 |= (1ULL << (32 - 19));
+        if(temp & (1ULL << 7)) right32 |= (1ULL << (32 - 32));
+        if(temp & (1ULL << 6)) right32 |= (1ULL << (32 - 12));
+        if(temp & (1ULL << 5)) right32 |= (1ULL << (32 - 22));
+        if(temp & (1ULL << 4)) right32 |= (1ULL << (32 - 7));
+        if(temp & (1ULL << 3)) right32 |= (1ULL << (32 - 5));
+        if(temp & (1ULL << 2)) right32 |= (1ULL << (32 - 27));
+        if(temp & (1ULL << 1)) right32 |= (1ULL << (32 - 15));
+        if(temp & (1ULL << 0)) right32 |= (1ULL << (32 - 21));
+
+        // Combine left half with new (highly modified) right half
+        right32 ^= left32;
+
+        // Merge left and right half
+        rounds_block = ((uint64_t)saved_right32 << 32) | (uint64_t)right32;
     }
 
+    // Split resulting rounds block and swap left and right halves one more time
+    left32  = (uint32_t)(rounds_block >> 32);
+    right32 = (uint32_t)(rounds_block & 0x00000000ffffffff);
+    saved_right32 = right32;
+    right32 = left32;
+    left32 = saved_right32;
 
-
+    // Merge left and right half
+    rounds_block = ((uint64_t)left32 << 32) | (uint64_t)right32;
 
 
     // ------------------------------------------------------------------------
     // Final Permutation
     // ------------------------------------------------------------------------
 
-    uint64_t final_permutation = 0ULL;
+    block = 0ULL;
 
-    uint64_t temp = initial_permutation;
+    if(rounds_block & (1ULL << 63)) block |= (1ULL << (64 - 58));
+    if(rounds_block & (1ULL << 62)) block |= (1ULL << (64 - 50));
+    if(rounds_block & (1ULL << 61)) block |= (1ULL << (64 - 42));
+    if(rounds_block & (1ULL << 60)) block |= (1ULL << (64 - 34));
+    if(rounds_block & (1ULL << 59)) block |= (1ULL << (64 - 26));
+    if(rounds_block & (1ULL << 58)) block |= (1ULL << (64 - 18));
+    if(rounds_block & (1ULL << 57)) block |= (1ULL << (64 - 10));
+    if(rounds_block & (1ULL << 56)) block |= (1ULL << (64 - 2));
+    if(rounds_block & (1ULL << 55)) block |= (1ULL << (64 - 60));
+    if(rounds_block & (1ULL << 54)) block |= (1ULL << (64 - 52));
+    if(rounds_block & (1ULL << 53)) block |= (1ULL << (64 - 44));
+    if(rounds_block & (1ULL << 52)) block |= (1ULL << (64 - 36));
+    if(rounds_block & (1ULL << 51)) block |= (1ULL << (64 - 28));
+    if(rounds_block & (1ULL << 50)) block |= (1ULL << (64 - 20));
+    if(rounds_block & (1ULL << 49)) block |= (1ULL << (64 - 12));
+    if(rounds_block & (1ULL << 48)) block |= (1ULL << (64 - 4));
 
-    if(temp & (1ULL << 63)) final_permutation |= (1ULL << (64 - 58));
-    if(temp & (1ULL << 62)) final_permutation |= (1ULL << (64 - 50));
-    if(temp & (1ULL << 61)) final_permutation |= (1ULL << (64 - 42));
-    if(temp & (1ULL << 60)) final_permutation |= (1ULL << (64 - 34));
-    if(temp & (1ULL << 59)) final_permutation |= (1ULL << (64 - 26));
-    if(temp & (1ULL << 58)) final_permutation |= (1ULL << (64 - 18));
-    if(temp & (1ULL << 57)) final_permutation |= (1ULL << (64 - 10));
-    if(temp & (1ULL << 56)) final_permutation |= (1ULL << (64 - 2));
-    if(temp & (1ULL << 55)) final_permutation |= (1ULL << (64 - 60));
-    if(temp & (1ULL << 54)) final_permutation |= (1ULL << (64 - 52));
-    if(temp & (1ULL << 53)) final_permutation |= (1ULL << (64 - 44));
-    if(temp & (1ULL << 52)) final_permutation |= (1ULL << (64 - 36));
-    if(temp & (1ULL << 51)) final_permutation |= (1ULL << (64 - 28));
-    if(temp & (1ULL << 50)) final_permutation |= (1ULL << (64 - 20));
-    if(temp & (1ULL << 49)) final_permutation |= (1ULL << (64 - 12));
-    if(temp & (1ULL << 48)) final_permutation |= (1ULL << (64 - 4));
+    if(rounds_block & (1ULL << 47)) block |= (1ULL << (64 - 62));
+    if(rounds_block & (1ULL << 46)) block |= (1ULL << (64 - 54));
+    if(rounds_block & (1ULL << 45)) block |= (1ULL << (64 - 46));
+    if(rounds_block & (1ULL << 44)) block |= (1ULL << (64 - 38));
+    if(rounds_block & (1ULL << 43)) block |= (1ULL << (64 - 30));
+    if(rounds_block & (1ULL << 42)) block |= (1ULL << (64 - 22));
+    if(rounds_block & (1ULL << 41)) block |= (1ULL << (64 - 14));
+    if(rounds_block & (1ULL << 40)) block |= (1ULL << (64 - 6));
+    if(rounds_block & (1ULL << 39)) block |= (1ULL << (64 - 64));
+    if(rounds_block & (1ULL << 38)) block |= (1ULL << (64 - 56));
+    if(rounds_block & (1ULL << 37)) block |= (1ULL << (64 - 48));
+    if(rounds_block & (1ULL << 36)) block |= (1ULL << (64 - 40));
+    if(rounds_block & (1ULL << 35)) block |= (1ULL << (64 - 32));
+    if(rounds_block & (1ULL << 34)) block |= (1ULL << (64 - 24));
+    if(rounds_block & (1ULL << 33)) block |= (1ULL << (64 - 16));
+    if(rounds_block & (1ULL << 32)) block |= (1ULL << (64 - 8));
 
-    if(temp & (1ULL << 47)) final_permutation |= (1ULL << (64 - 62));
-    if(temp & (1ULL << 46)) final_permutation |= (1ULL << (64 - 54));
-    if(temp & (1ULL << 45)) final_permutation |= (1ULL << (64 - 46));
-    if(temp & (1ULL << 44)) final_permutation |= (1ULL << (64 - 38));
-    if(temp & (1ULL << 43)) final_permutation |= (1ULL << (64 - 30));
-    if(temp & (1ULL << 42)) final_permutation |= (1ULL << (64 - 22));
-    if(temp & (1ULL << 41)) final_permutation |= (1ULL << (64 - 14));
-    if(temp & (1ULL << 40)) final_permutation |= (1ULL << (64 - 6));
-    if(temp & (1ULL << 39)) final_permutation |= (1ULL << (64 - 64));
-    if(temp & (1ULL << 38)) final_permutation |= (1ULL << (64 - 56));
-    if(temp & (1ULL << 37)) final_permutation |= (1ULL << (64 - 48));
-    if(temp & (1ULL << 36)) final_permutation |= (1ULL << (64 - 40));
-    if(temp & (1ULL << 35)) final_permutation |= (1ULL << (64 - 32));
-    if(temp & (1ULL << 34)) final_permutation |= (1ULL << (64 - 24));
-    if(temp & (1ULL << 33)) final_permutation |= (1ULL << (64 - 16));
-    if(temp & (1ULL << 32)) final_permutation |= (1ULL << (64 - 8));
+    if(rounds_block & (1ULL << 31)) block |= (1ULL << (64 - 57));
+    if(rounds_block & (1ULL << 30)) block |= (1ULL << (64 - 49));
+    if(rounds_block & (1ULL << 29)) block |= (1ULL << (64 - 41));
+    if(rounds_block & (1ULL << 28)) block |= (1ULL << (64 - 33));
+    if(rounds_block & (1ULL << 27)) block |= (1ULL << (64 - 25));
+    if(rounds_block & (1ULL << 26)) block |= (1ULL << (64 - 17));
+    if(rounds_block & (1ULL << 25)) block |= (1ULL << (64 - 9));
+    if(rounds_block & (1ULL << 24)) block |= (1ULL << (64 - 1));
+    if(rounds_block & (1ULL << 23)) block |= (1ULL << (64 - 59));
+    if(rounds_block & (1ULL << 22)) block |= (1ULL << (64 - 51));
+    if(rounds_block & (1ULL << 21)) block |= (1ULL << (64 - 43));
+    if(rounds_block & (1ULL << 20)) block |= (1ULL << (64 - 35));
+    if(rounds_block & (1ULL << 19)) block |= (1ULL << (64 - 27));
+    if(rounds_block & (1ULL << 18)) block |= (1ULL << (64 - 19));
+    if(rounds_block & (1ULL << 17)) block |= (1ULL << (64 - 11));
+    if(rounds_block & (1ULL << 16)) block |= (1ULL << (64 - 3));
 
-    if(temp & (1ULL << 31)) final_permutation |= (1ULL << (64 - 57));
-    if(temp & (1ULL << 30)) final_permutation |= (1ULL << (64 - 49));
-    if(temp & (1ULL << 29)) final_permutation |= (1ULL << (64 - 41));
-    if(temp & (1ULL << 28)) final_permutation |= (1ULL << (64 - 33));
-    if(temp & (1ULL << 27)) final_permutation |= (1ULL << (64 - 25));
-    if(temp & (1ULL << 26)) final_permutation |= (1ULL << (64 - 17));
-    if(temp & (1ULL << 25)) final_permutation |= (1ULL << (64 - 9));
-    if(temp & (1ULL << 24)) final_permutation |= (1ULL << (64 - 1));
-    if(temp & (1ULL << 23)) final_permutation |= (1ULL << (64 - 59));
-    if(temp & (1ULL << 22)) final_permutation |= (1ULL << (64 - 51));
-    if(temp & (1ULL << 21)) final_permutation |= (1ULL << (64 - 43));
-    if(temp & (1ULL << 20)) final_permutation |= (1ULL << (64 - 35));
-    if(temp & (1ULL << 19)) final_permutation |= (1ULL << (64 - 27));
-    if(temp & (1ULL << 18)) final_permutation |= (1ULL << (64 - 19));
-    if(temp & (1ULL << 17)) final_permutation |= (1ULL << (64 - 11));
-    if(temp & (1ULL << 16)) final_permutation |= (1ULL << (64 - 3));
-
-    if(temp & (1ULL << 15)) final_permutation |= (1ULL << (64 - 61));
-    if(temp & (1ULL << 14)) final_permutation |= (1ULL << (64 - 53));
-    if(temp & (1ULL << 13)) final_permutation |= (1ULL << (64 - 45));
-    if(temp & (1ULL << 12)) final_permutation |= (1ULL << (64 - 37));
-    if(temp & (1ULL << 11)) final_permutation |= (1ULL << (64 - 29));
-    if(temp & (1ULL << 10)) final_permutation |= (1ULL << (64 - 21));
-    if(temp & (1ULL << 9)) final_permutation |= (1ULL << (64 - 13));
-    if(temp & (1ULL << 8)) final_permutation |= (1ULL << (64 - 5));
-    if(temp & (1ULL << 7)) final_permutation |= (1ULL << (64 - 63));
-    if(temp & (1ULL << 6)) final_permutation |= (1ULL << (64 - 55));
-    if(temp & (1ULL << 5)) final_permutation |= (1ULL << (64 - 47));
-    if(temp & (1ULL << 4)) final_permutation |= (1ULL << (64 - 39));
-    if(temp & (1ULL << 3)) final_permutation |= (1ULL << (64 - 31));
-    if(temp & (1ULL << 2)) final_permutation |= (1ULL << (64 - 23));
-    if(temp & (1ULL << 1)) final_permutation |= (1ULL << (64 - 15));
-    if(temp & (1ULL << 0)) final_permutation |= (1ULL << (64 - 7));
-
-
-
-    if(final_permutation != block) {cout << "\nFinal permutation != block."; exit(0);}
-    block = final_permutation;
-
-    // ------------------------------------------------------------------------
-    // TODO
-    // ------------------------------------------------------------------------
-
+    if(rounds_block & (1ULL << 15)) block |= (1ULL << (64 - 61));
+    if(rounds_block & (1ULL << 14)) block |= (1ULL << (64 - 53));
+    if(rounds_block & (1ULL << 13)) block |= (1ULL << (64 - 45));
+    if(rounds_block & (1ULL << 12)) block |= (1ULL << (64 - 37));
+    if(rounds_block & (1ULL << 11)) block |= (1ULL << (64 - 29));
+    if(rounds_block & (1ULL << 10)) block |= (1ULL << (64 - 21));
+    if(rounds_block & (1ULL << 9)) block |= (1ULL << (64 - 13));
+    if(rounds_block & (1ULL << 8)) block |= (1ULL << (64 - 5));
+    if(rounds_block & (1ULL << 7)) block |= (1ULL << (64 - 63));
+    if(rounds_block & (1ULL << 6)) block |= (1ULL << (64 - 55));
+    if(rounds_block & (1ULL << 5)) block |= (1ULL << (64 - 47));
+    if(rounds_block & (1ULL << 4)) block |= (1ULL << (64 - 39));
+    if(rounds_block & (1ULL << 3)) block |= (1ULL << (64 - 31));
+    if(rounds_block & (1ULL << 2)) block |= (1ULL << (64 - 23));
+    if(rounds_block & (1ULL << 1)) block |= (1ULL << (64 - 15));
+    if(rounds_block & (1ULL << 0)) block |= (1ULL << (64 - 7));
 
     return;
 }
