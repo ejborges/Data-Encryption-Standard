@@ -25,7 +25,7 @@
 #include <math.h>
 
 // comment out this define to prevent debugging text from printing to the console
-#define DEBUG
+//#define DEBUG
 
 using namespace std;
 
@@ -37,7 +37,8 @@ fstream outfile;                // output file stream
 uint64_t block;                 // container for our 64 bit block throughout the DES algorithm
 uint64_t infile_byte_length;
 unsigned int bytes_remaining;   // number of bytes yet to be read
-uint64_t roundkey[16];            // storage for the sixteen 48 bit sub keys used throughout DES's sixteen cycles
+uint64_t roundkey[16];          // storage for the sixteen 48 bit sub keys used throughout DES's sixteen cycles
+clock_t start_time;             // storage for start time
 
 const int s1[4][16] = {
         {14, 4,13, 1, 2,15,11, 8, 3,10, 6,12, 5, 9, 0, 7},
@@ -96,6 +97,8 @@ void DES();
 
 int main(int argc, char *argv[]) {
 
+    start_time = clock();
+
     // Help argument; describe acceptable arguments
     if(argc == 2 && !strncmp(argv[1], "help", 4)) {
         cout << "\nDES Help - Acceptable Arguments";
@@ -105,13 +108,16 @@ int main(int argc, char *argv[]) {
         cout << "\n\t\t<mode> only ecb mode supported; argument should read \"ecb\" (without quotes)";
         cout << "\n\t\t<infile> input file to encrypt or decrypt";
         cout << "\n\t\t<outfile> output file to save encrypted or decrypted data" << endl;
+        cout << "\nIf there are any $ (dollar signs) in your key, precede each with a \\ (backslash) to escape their "
+             << "other functions. The dollar sign acts as a special shell variable that returns other data." << endl
+             << endl;
         return 0;
     }
 
     // ------------------------------------------------------------------------
     // Validate and sanitize arguments
     // ------------------------------------------------------------------------
-    if (argc != 6) {cout << "Invalid argument length!"; return 0;}
+    if (argc != 6) {cout << "Invalid argument length!\n"; return 0;}
 
     #ifdef DEBUG
     cout << "Arguments:" << endl;
@@ -126,15 +132,17 @@ int main(int argc, char *argv[]) {
     cout << "\nVariable Values:";
     #endif
 
+
+
     // <-action>
     encrypt = false; // start with assuming we'll decrypt
     // first and last characters in first argument should be the same for selecting encrypt or decrypt
     // 0 = the null terminating character
     if(argv[1][0] != '-' || argv[1][2] != 0)
-        {cout << "\nInvalid <-action> argument! Only -e and -d allowed\n"; return 0;}
+        {cout << "\nInvalid <-action> argument! Only -e and -d allowed. Your <-action> = " << argv[1] << endl; return 0;}
     if(tolower(argv[1][1]) == 'e') encrypt = true;
     else if(tolower(argv[1][1]) != 'd')
-        {cout << "\nInvalid <-action> argument! Only -e and -d allowed\n"; return 0;}
+        {cout << "\nInvalid <-action> argument! Only -e and -d allowed. Your <-action> = " << argv[1] << endl; return 0;}
     #ifdef DEBUG
     cout << "\n\tbool encrypt = ";
     if(encrypt) cout << "TRUE" << endl;
@@ -152,9 +160,10 @@ int main(int argc, char *argv[]) {
             // check for short key arguments
             // 0 (null terminating char) will appear at the end of every argument from command line
             if(argv[2][i] == 0)
-                {cout << "\nInvalid key length; Key too short!\n"; return 0;}
+                {cout << "\nInvalid key length; Key too short! Your <key> = " << argv[2] << endl; return 0;}
             if(argv[2][i] == '\'')
-                {cout << "\nInvalid key length; Key too short! single quote character not allowed\n"; return 0;}
+                {cout << "\nInvalid key length; Key too short! Single quote character not allowed before 8 character."
+                         << "Your <key> = " << argv[2] << endl; return 0;}
 
             // j = index for bit location within 64 bit key container
             // k = index for bit location within a single character
@@ -165,7 +174,7 @@ int main(int argc, char *argv[]) {
         }
         // check for long key arguments
         if((argv[2][9] != '\'' && argv[2][9] != 0) || (argv[2][9] == '\'' && argv[2][10] != 0))
-            {cout << "\nInvalid key length; Key too long!\n"; return 0;}
+            {cout << "\nInvalid key length; Key too long! Your <key> = " << argv[2] << endl; return 0;}
     }
     else if(isxdigit(argv[2][0])){
         // go through argument's 16 hex digits (64 bits)
@@ -188,7 +197,7 @@ int main(int argc, char *argv[]) {
         if(argv[2][16] != 0) {cout << "\nKey too long! Require 64 bit HEX value (without 0x prefix)\n"; return 0;}
     }
     else {
-        cout << "Invalid <key> argument! Must begin with single quote character or HEX value (without 0x prefix)";
+        cout << "Invalid <key> argument! Must begin with single quote character or HEX value (without 0x prefix)\n";
         return 0;
     }
     uint64_t badkey1 = 0ULL;
@@ -196,7 +205,7 @@ int main(int argc, char *argv[]) {
     uint64_t badkey3 = 0xFFFFFFFF00000000;
     uint64_t badkey4 = 0x00000000FFFFFFFF;
     if(key == badkey1 || key == badkey2 || key == badkey3 || key == badkey4)
-        {cout << "\nThe key used will not work well with DES. Please choose a better key.\nExiting DES."; return 0;}
+        {cout << "\nThe key used will not work well with DES. Please choose a better key.\nExiting DES.\n"; return 0;}
     #ifdef DEBUG
     // print 64 bit key value in decimal, binary, hex, and ascii string representation
     cout << "\tuint64_t key = 0d" << key << "\n\t             = ";
@@ -220,7 +229,7 @@ int main(int argc, char *argv[]) {
     #endif
 
     // check if infile == outfile
-    if(!strcmp(argv[4], argv[5])) {cout << "\nError: <infile> cannot be the same as <outfile>"; return 0;}
+    if(!strcmp(argv[4], argv[5])) {cout << "\nError: <infile> cannot be the same as <outfile>\n"; return 0;}
 
     // <infile>
     // attempt to open the input file as binary input stream
@@ -238,8 +247,8 @@ int main(int argc, char *argv[]) {
         cout << "\n\t\"" << argv[5] << "\" already exists.\n\tOverwrite? [y/n]:";
         char overwrite;
         cin >> overwrite;
-        if(tolower(overwrite) == 'n') {cout << "Exiting DES"; return 0;}
-        else if(tolower(overwrite) != 'y') {cout << "Invalid input; Exiting DES"; return 0;}
+        if(tolower(overwrite) == 'n') {cout << "Exiting DES\n"; return 0;}
+        else if(tolower(overwrite) != 'y') {cout << "Invalid input; Exiting DES\n"; return 0;}
         // if overwrite allowed, open output file as truncated binary output stream
         // trunc discards any contents that existed in file
         outfile.open(argv[5], fstream::out | fstream::binary | fstream::trunc);
@@ -262,7 +271,7 @@ int main(int argc, char *argv[]) {
     // if file larger than 2 billion (and change) bytes
     if (infile.tellg() > 0x7fffffff) {
         cout << endl << argv[4] << " file size too large.";
-        cout << "\nMust be between 0 and 2,147,483,647 bytes long. Exiting DES";
+        cout << "\nMust be between 0 and 2,147,483,647 bytes long. Exiting DES\n";
         return 0;
     }
     infile_byte_length = (uint64_t) infile.tellg(); // save file size in bytes
@@ -546,11 +555,13 @@ int main(int argc, char *argv[]) {
         // Decrypt block
         DES();
 
+
+
         // extract file length value by bit masking
         bytes_remaining = (unsigned int)(block & 0x000000007fffffff);
 
         // verify decrypted file length makes sense
-        if(bytes_remaining > (infile_byte_length - 8))
+        if(bytes_remaining > (infile_byte_length - 8) || bytes_remaining < (infile_byte_length - 15))
             {cout << "\nError with decrypted file length (= " << bytes_remaining << " bytes). Exiting DES."; return 0;}
 
         unsigned int total_bytes = bytes_remaining;
@@ -566,7 +577,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // TODO print out time statistics
+    // print out time statistics
+    cout << "\nElapsed time = " << (float)(clock() - start_time)/CLOCKS_PER_SEC << " seconds.";
 
     cout << "\nDone" << endl;
 
@@ -752,6 +764,7 @@ void DES(){
 //        cout << "\n        = ";
 //        print64(temp32, 'x');
 //        cout << endl << endl;
+
 
         // Post S-Box right side permutation
         uint32_t temp = right32;
