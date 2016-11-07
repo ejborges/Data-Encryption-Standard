@@ -270,7 +270,6 @@ int main(int argc, char *argv[]) {
     infile.seekg(0, infile.beg); // put cursor at beginning of file
 
 
-
     // ------------------------------------------------------------------------
     // Generate sixteen 48 bit round keys (for each of DES's sixteen rounds)
     // from the given 64 bit key and store them in roundkey[]
@@ -280,7 +279,7 @@ int main(int argc, char *argv[]) {
     cout << "\nGenerating sixteen 48 bit round keys:";
     #endif
 
-    // Compress 64 bit key to 56 bit permuted key ---------------/
+    // Compress 64 bit key to 56 bit permuted key ----------------------/
     uint64_t compressed_56_bit_key = 0ULL;
 
     if(key & (1ULL << 63)) compressed_56_bit_key |= (1ULL << (56 - 8));
@@ -428,7 +427,7 @@ int main(int argc, char *argv[]) {
         if(compressed_56_bit_key & (1ULL << 14)) compressed_48_bit_key |= (1ULL << (48 - 44));
 
         if(compressed_56_bit_key & (1ULL << 12)) compressed_48_bit_key |= (1ULL << (48 - 37));
-        if(compressed_56_bit_key & (1ULL << 11)) compressed_48_bit_key |= (1ULL << (48 - 44));
+        if(compressed_56_bit_key & (1ULL << 11)) compressed_48_bit_key |= (1ULL << (48 - 34));
         if(compressed_56_bit_key & (1ULL << 10)) compressed_48_bit_key |= (1ULL << (48 - 43));
         if(compressed_56_bit_key & (1ULL << 9)) compressed_48_bit_key |= (1ULL << (48 - 29));
         if(compressed_56_bit_key & (1ULL << 8)) compressed_48_bit_key |= (1ULL << (48 - 36));
@@ -452,6 +451,7 @@ int main(int argc, char *argv[]) {
         cout << endl;
         #endif
     }
+
 
     // ------------------------------------------------------------------------
     // Encrypt or Decrypt?
@@ -551,7 +551,7 @@ int main(int argc, char *argv[]) {
 
         // verify decrypted file length makes sense
         if(bytes_remaining > (infile_byte_length - 8))
-            {cout << "\nError with decrypted file length. Exiting DES."; return 0;}
+            {cout << "\nError with decrypted file length (= " << bytes_remaining << " bytes). Exiting DES."; return 0;}
 
         unsigned int total_bytes = bytes_remaining;
         #ifdef DEBUG
@@ -561,9 +561,6 @@ int main(int argc, char *argv[]) {
         // read, decrypt, and write until no more bytes left
         while(bytes_remaining){
             readBlock();
-            #ifdef DEBUG
-            cout << "\r\tDecrypting block " << ceil(total_bytes / 8);
-            #endif
             DES(); // Decrypt block
             writeBlock();
         }
@@ -798,17 +795,15 @@ void DES(){
 
         // Merge left and right half
         rounds_block = ((uint64_t)saved_right32 << 32) | (uint64_t)right32;
+        //rounds_block = ((uint64_t)right32 << 32) | (uint64_t)saved_right32;
     }
 
     // Split resulting rounds block and swap left and right halves one more time
     left32  = (uint32_t)(rounds_block >> 32);
     right32 = (uint32_t)(rounds_block & 0x00000000ffffffff);
-    saved_right32 = right32;
-    right32 = left32;
-    left32 = saved_right32;
 
     // Merge left and right half
-    rounds_block = ((uint64_t)left32 << 32) | (uint64_t)right32;
+    rounds_block = ((uint64_t)right32 << 32) | (uint64_t)left32;
 
 
     // ------------------------------------------------------------------------
