@@ -24,13 +24,6 @@
 #include <time.h>
 #include <math.h>
 
-// comment out this define if not on POSIX system
-//#define POSIX
-
-#ifdef POSIX
-#include <pthread.h>
-#endif
-
 // comment out this define to prevent debugging text from printing to the console
 //#define VERBOSE_DEBUG
 
