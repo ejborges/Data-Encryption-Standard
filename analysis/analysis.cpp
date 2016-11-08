@@ -98,6 +98,12 @@ int main(int argc, char *argv[]) {
 
 
     unsigned int char_freq[256] = {0};
+    unsigned int digraph_freq[256*256] = {0};
+    unsigned int trigraph_freq[256*256*256] = {0};
+    uint16_t digraph;
+    uint32_t trigraph;
+    uint8_t previous_char, previous_previous_char;
+    bool first_round = true;
 
 
     if(isPlaintext){
@@ -105,13 +111,45 @@ int main(int argc, char *argv[]) {
             readBlock();
 
             // character-frequency
-            
+            ++char_freq[(uint8_t)((block & 0xff00000000000000) >> 56)];
+            ++char_freq[(uint8_t)((block & 0x00ff000000000000) >> 48)];
+            ++char_freq[(uint8_t)((block & 0x0000ff0000000000) >> 40)];
+            ++char_freq[(uint8_t)((block & 0x000000ff00000000) >> 32)];
+            ++char_freq[(uint8_t)((block & 0x00000000ff000000) >> 24)];
+            ++char_freq[(uint8_t)((block & 0x0000000000ff0000) >> 16)];
+            ++char_freq[(uint8_t)((block & 0x000000000000ff00) >> 8)];
+            ++char_freq[(uint8_t)((block & 0x00000000000000ff))];
 
             // bit-frequency
+            //TODO
 
             // di-graphs
+            if(!first_round){
+                digraph = ((uint16_t)previous_char << 8) | (uint8_t)((block & 0xff00000000000000) >> 56);
+                ++digraph_freq[digraph];
+            }
+            for(uint64_t shiftby = 48, andby = 0x00ff000000000000; shiftby >= 0; shiftby -= 8, andby >>= 8) {
+                digraph = (uint16_t)((block & ((uint64_t)andby << 8)) >> (shiftby + 8)) | (uint8_t)((block & andby) >> shiftby);
+                ++digraph_freq[digraph];
+            }
+
 
             // tri-graphs
+            if(!first_round){
+                trigraph = (((uint32_t)previous_previous_char << 16) | ((uint32_t)previous_char << 8))
+                           | (uint8_t)((block & 0xff00000000000000) >> 56);
+                ++trigraph_freq[trigraph];
+                trigraph = (((uint32_t)previous_char << 16) | (uint32_t)((block & 0xff00000000000000) >> 48))
+                           | (uint8_t)((block & 0x00ff000000000000) >> 48);
+                ++trigraph_freq[trigraph];
+            }
+            for(uint64_t shiftby = 40, andby = 0x0000ff0000000000; shiftby >= 0; shiftby -= 8, andby >>= 8) {
+                trigraph = (uint32_t)((block & ((uint64_t)andby << 16)) >> (shiftby + 16)) |
+                            ((uint32_t)((block & ((uint64_t)andby << 8)) >> (shiftby + 8)) |
+                                    (uint32_t)((block & andby) >> shiftby));
+                ++trigraph_freq[trigraph];
+            }
+
 
             // averages
 
@@ -120,9 +158,14 @@ int main(int argc, char *argv[]) {
             // distributions (normal and uniform)
 
             // measure of how DES obscures input patterns in output file
+
+
+
+
+            previous_previous_char = (uint8_t)((block & 0x000000000000ff00) >> 8);
+            previous_char = (uint8_t)((block & 0x00000000000000ff));
+            first_round = false;
         }
-
-
     }
     else{
         // we're reading an encrypted file
@@ -150,6 +193,46 @@ int main(int argc, char *argv[]) {
             // measure of how DES obscures input patterns in output file
         }
     }
+
+    // Write analysis to file
+    outfile << "Analysis of " << argv[3] << "\n\n";
+
+    // character-frequency
+    outfile << "Character Frequency\n"
+            << "Char,ASCII,Freq\n";
+    for(int i = 0; i < 256; ++i){
+        outfile << i << ",";
+        if(i < 32 || i == 127) outfile << " ,";
+        else outfile << (char)i << ",";
+        outfile << char_freq[i] << "\n";
+    }
+    outfile << "\n";
+
+    // bit-frequency
+
+    // di-graphs
+    outfile << "Di-Graph Frequency\n"
+            << "Chars,ASCII,Freq\n";
+    for(uint16_t i = 0; i < (256*256); ++i){
+        
+    }
+
+
+    // tri-graphs
+
+
+    // averages
+
+    // standard deviations
+
+    // distributions (normal and uniform)
+
+    // measure of how DES obscures input patterns in output file
+
+
+
+
+
 
     return 0;
 }
@@ -236,7 +319,7 @@ void print64(uint64_t &value, char type){
             // go through all 64 bits and set appropriate bits in all 8 chars
             for(int i = 63, k = 0; i >=0; --i){
                 // check if bit location i is set; if so, set the appropriate bit in key_string[k]
-                if(key & (1ULL << i)) key_string[k] |= (1 << (i % 8));
+                if(value & (1ULL << i)) key_string[k] |= (1 << (i % 8));
                 if(!(i % 8)) ++k;
             }
             cout << "\"";
