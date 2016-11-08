@@ -24,8 +24,15 @@
 #include <time.h>
 #include <math.h>
 
+// comment out this define if not on POSIX system
+//#define POSIX
+
+#ifdef POSIX
+#include <pthread.h>
+#endif
+
 // comment out this define to prevent debugging text from printing to the console
-//#define DEBUG
+//#define VERBOSE_DEBUG
 
 using namespace std;
 
@@ -40,6 +47,54 @@ unsigned int bytes_remaining;   // number of bytes yet to be read
 uint64_t roundkey[16];          // storage for the sixteen 48 bit sub keys used throughout DES's sixteen cycles
 clock_t start_time;             // storage for start time
 
+// DES algorightm specific vars.
+// defined here to reduce compiler generated
+// instructions within DES() to speed up algorithm
+uint64_t DES_rounds_block;
+uint64_t DES_left32;
+uint64_t DES_right32;
+uint64_t saved_right32;
+
+//const int s1[] = {
+//        14, 4,13, 1, 2,15,11, 8, 3,10, 6,12, 5, 9, 0, 7,
+//         0,15, 7, 4,14, 2,13, 1,10, 6,12,11, 9, 5, 3, 8,
+//         4, 1,14, 8,13, 6, 2,11,15,12, 9, 7, 3,10, 5, 0,
+//        15,12, 8, 2, 4, 9, 1, 7, 5,11, 3,14,10, 0, 6,13};
+//const int s2[] = {
+//        15, 1, 8,14, 6,11, 3, 4, 9, 7, 2,13,12, 0, 5,10,
+//         3,13, 4, 7,15, 2, 8,14,12, 0, 1,10, 6, 9,11, 5,
+//         0,14, 7,11,10, 4,13, 1, 5, 8,12, 6, 9, 3, 2,15,
+//        13, 8,10, 1, 3,15, 4, 2,11, 6, 7,12, 0, 5,14, 9};
+//const int s3[] = {
+//        10, 0, 9,14, 6, 3,15, 5, 1,13,12, 7,11, 4, 2, 8,
+//        13, 7, 0, 9, 3, 4, 6,10, 2, 8, 5,14,12,11,15, 1,
+//        13, 6, 4, 9, 8,15, 3, 0,11, 1, 2,12, 5,10,14, 7,
+//         1,10,13, 0, 6, 9, 8, 7, 4,15,14, 3,11, 5, 2,12};
+//const int s4[] = {
+//         7,13,14, 3, 0, 6, 9,10, 1, 2, 8, 5,11,12, 4,15,
+//        13, 8,11, 5, 6,15, 0, 3, 4, 7, 2,12, 1,10,14, 9,
+//        10, 6, 9, 0,12,11, 7,13,15, 1, 3,14, 5, 2, 8, 4,
+//         3,15, 0, 6,10, 1,13, 8, 9, 4, 5,11,12, 7, 2,14};
+//const int s5[] = {
+//         2,12, 4, 1, 7,10,11, 6, 8, 5, 3,15,13, 0,14, 9,
+//        14,11, 2,12, 4, 7,13, 1, 5, 0,15,10, 3, 9, 8, 6,
+//         4, 2, 1,11,10,13, 7, 8,15, 9,12, 5, 6, 3, 0,14,
+//        11, 8,12, 7, 1,14, 2,13, 6,15, 0, 9,10, 4, 5, 3};
+//const int s6[] = {
+//        12, 1,10,15, 9, 2, 6, 8, 0,13, 3, 4,14, 7, 5,11,
+//        10,15, 4, 2, 7,12, 9, 5, 6, 1,13,14, 0,11, 3, 8,
+//         9,14,15, 5, 2, 8,12, 3, 7, 0, 4,10, 1,13,11, 6,
+//         4, 3, 2,12, 9, 5,15,10,11,14, 1, 7, 6, 0, 8,13};
+//const int s7[] = {
+//         4,11, 2,14,15, 0, 8,13, 3,12, 9, 7, 5,10, 6, 1,
+//        13, 0,11, 7, 4, 9, 1,10,14, 3, 5,12, 2,15, 8, 6,
+//         1, 4,11,13,12, 3, 7,14,10,15, 6, 8, 0, 5, 9, 2,
+//         6,11,13, 8, 1, 4,10, 7, 9, 5, 0,15,14, 2, 3,12};
+//const int s8[] = {
+//        13, 2, 8, 4, 6,15,11, 1,10, 9, 3,14, 5, 0,12, 7,
+//         1,15,13, 8,10, 3, 7, 4,12, 5, 6,11, 0,14, 9, 2,
+//         7,11, 4, 1, 9,12,14, 2, 0, 6,10,13,15, 3, 5, 8,
+//         2, 1,14, 7, 4,10, 8,13,15,12, 9, 0, 3, 5, 6,11};
 const int s1[4][16] = {
         {14, 4,13, 1, 2,15,11, 8, 3,10, 6,12, 5, 9, 0, 7},
         { 0,15, 7, 4,14, 2,13, 1,10, 6,12,11, 9, 5, 3, 8},
@@ -100,7 +155,7 @@ int main(int argc, char *argv[]) {
     start_time = clock();
 
     // Help argument; describe acceptable arguments
-    if(argc == 2 && !strncmp(argv[1], "help", 4)) {
+    if(argc == 1 || (argc == 2 && !strncmp(argv[1], "help", 4))) {
         cout << "\nDES Help - Acceptable Arguments";
         cout << "\n\n\t<-action> <key> <mode> <infile> <outfile>\n";
         cout << "\n\t\t<-action> -e to encrypt <infile> or -d to decrypt <infile>";
@@ -119,7 +174,7 @@ int main(int argc, char *argv[]) {
     // ------------------------------------------------------------------------
     if (argc != 6) {cout << "Invalid argument length!\n"; return 0;}
 
-    #ifdef DEBUG
+    #ifdef VERBOSE_DEBUG
     cout << "Arguments:" << endl;
     cout << "\targc = " << argc << endl;
     cout << "\targv[0] = <path>    = " << argv[0] << endl;
@@ -139,11 +194,13 @@ int main(int argc, char *argv[]) {
     // first and last characters in first argument should be the same for selecting encrypt or decrypt
     // 0 = the null terminating character
     if(argv[1][0] != '-' || argv[1][2] != 0)
-        {cout << "\nInvalid <-action> argument! Only -e and -d allowed. Your <-action> = " << argv[1] << endl; return 0;}
+        {cout << "\nInvalid <-action> argument! Only -e and -d allowed. For help, run DES with no arguments."
+              << "\nYour <-action> = " << argv[1] << endl; return 0;}
     if(tolower(argv[1][1]) == 'e') encrypt = true;
     else if(tolower(argv[1][1]) != 'd')
-        {cout << "\nInvalid <-action> argument! Only -e and -d allowed. Your <-action> = " << argv[1] << endl; return 0;}
-    #ifdef DEBUG
+        {cout << "\nInvalid <-action> argument! Only -e and -d allowed. For help, run DES with no arguments."
+              << "\nYour <-action> = " << argv[1] << endl; return 0;}
+    #ifdef VERBOSE_DEBUG
     cout << "\n\tbool encrypt = ";
     if(encrypt) cout << "TRUE" << endl;
     else cout << "FALSE" << endl;
@@ -160,10 +217,11 @@ int main(int argc, char *argv[]) {
             // check for short key arguments
             // 0 (null terminating char) will appear at the end of every argument from command line
             if(argv[2][i] == 0)
-                {cout << "\nInvalid key length; Key too short! Your <key> = " << argv[2] << endl; return 0;}
+                {cout << "\nInvalid key length; Key too short! For help, run DES with no arguments."
+                      << "\nYour <key> = " << argv[2] << endl; return 0;}
             if(argv[2][i] == '\'')
-                {cout << "\nInvalid key length; Key too short! Single quote character not allowed before 8 character."
-                         << "Your <key> = " << argv[2] << endl; return 0;}
+                {cout << "\nInvalid key length; Key too short! Single quote character not allowed before 8 character. "
+                         << "For help, run DES with no arguments.\nYour <key> = " << argv[2] << endl; return 0;}
 
             // j = index for bit location within 64 bit key container
             // k = index for bit location within a single character
@@ -174,16 +232,20 @@ int main(int argc, char *argv[]) {
         }
         // check for long key arguments
         if((argv[2][9] != '\'' && argv[2][9] != 0) || (argv[2][9] == '\'' && argv[2][10] != 0))
-            {cout << "\nInvalid key length; Key too long! Your <key> = " << argv[2] << endl; return 0;}
+            {cout << "\nInvalid key length; Key too long! For help, run DES with no arguments."
+                  << "\nYour <key> = " << argv[2] << endl; return 0;}
     }
     else if(isxdigit(argv[2][0])){
         // go through argument's 16 hex digits (64 bits)
         for(int i = 0; i < 16; ++i){
             // check for short key arguments or invalid hex digits
             // 0 (null terminating char) will appear at the end of every argument from command line
-            if(argv[2][i] == 0) {cout << "\nKey too short! Require 64 bit HEX value (without 0x prefix)\n"; return 0;}
+            if(argv[2][i] == 0)
+                {cout << "\nKey too short! Require 64 bit HEX value (without 0x prefix). "
+                      << "For help, run DES with no arguments.\nYour <key> = " << argv[2] << endl; return 0;}
             if(!isxdigit(argv[2][i]))
-            {cout << "\nInvalid key! Key is not a HEX value! Require 64 bit HEX value (without 0x prefix)\n"; return 0;}
+                {cout << "\nInvalid key! Key is not a HEX value! Require 64 bit HEX value (without 0x prefix). "
+                      << "For help, run DES with no arguments.\nYour <key> = " << argv[2] << endl; return 0;}
 
             // extract numerical hex value from character
             // '0' = 0x30 ascii; '3' - '0' = 0x33 - 0x30 = 0x03 = 3 decimal
@@ -194,10 +256,13 @@ int main(int argc, char *argv[]) {
             key |= (uint64_t)hex_val << ((15 - i) * 4); // set appropriate bits in 64 bit container
         }
         // check for long key arguments
-        if(argv[2][16] != 0) {cout << "\nKey too long! Require 64 bit HEX value (without 0x prefix)\n"; return 0;}
+        if(argv[2][16] != 0)
+            {cout << "\nKey too long! Require 64 bit HEX value (without 0x prefix). "
+                  << "For help, run DES with no arguments.\nYour <key> = " << argv[2] << endl; return 0;}
     }
     else {
-        cout << "Invalid <key> argument! Must begin with single quote character or HEX value (without 0x prefix)\n";
+        cout << "Invalid <key> argument! Must begin with single quote character or HEX value (without 0x prefix). "
+             << "For help, run DES with no arguments.\nYour <key> = " << argv[2] << endl;
         return 0;
     }
     uint64_t badkey1 = 0ULL;
@@ -206,7 +271,7 @@ int main(int argc, char *argv[]) {
     uint64_t badkey4 = 0x00000000FFFFFFFF;
     if(key == badkey1 || key == badkey2 || key == badkey3 || key == badkey4)
         {cout << "\nThe key used will not work well with DES. Please choose a better key.\nExiting DES.\n"; return 0;}
-    #ifdef DEBUG
+    #ifdef VERBOSE_DEBUG
     // print 64 bit key value in decimal, binary, hex, and ascii string representation
     cout << "\tuint64_t key = 0d" << key << "\n\t             = ";
     print64(key, 'b');
@@ -220,9 +285,10 @@ int main(int argc, char *argv[]) {
     // <mode>
     // since only ecb mode supported, argv[3] (tolower()) should read 'e','c','b'
     if(tolower(argv[3][0]) != 'e' || tolower(argv[3][1]) != 'c' || tolower(argv[3][2]) != 'b')
-        {cout << "\nInvalid <mode> argument; Only ECB mode supported\n"; return 0;}
+        {cout << "\nInvalid <mode> argument; Only ECB mode supported. "
+              << "For help, run DES with no arguments.\nYour <mode> = " << argv[3] << endl; return 0;}
     ecbMode = true;
-    #ifdef DEBUG
+    #ifdef VERBOSE_DEBUG
     cout << "\tbool ecbMode = ";
     if(ecbMode) cout << "TRUE" << endl;
     else cout << "FALSE" << endl;
@@ -235,7 +301,7 @@ int main(int argc, char *argv[]) {
     // attempt to open the input file as binary input stream
     infile.open(argv[4], fstream::in | fstream::binary);
     if(infile.fail()) {cout << "\nFailed to open \"" << argv[4] << "\"" << endl; return 0;}
-    #ifdef DEBUG
+    #ifdef VERBOSE_DEBUG
     cout << "\nFile Access:\n\tSuccessfully opened  \"" << argv[4] << "\"" << endl;
     #endif
 
@@ -253,7 +319,7 @@ int main(int argc, char *argv[]) {
         // trunc discards any contents that existed in file
         outfile.open(argv[5], fstream::out | fstream::binary | fstream::trunc);
         if(outfile.fail()) {cout << "\nFailed to open \"" << argv[5] << "\"" << endl; return 0;}
-        #ifdef DEBUG
+        #ifdef VERBOSE_DEBUG
         cout << "\tSuccessfully opened  \"" << argv[5] << "\"" << endl;
         #endif
     }
@@ -261,7 +327,7 @@ int main(int argc, char *argv[]) {
         // if output file does not exist, create output file and open as binary output stream
         outfile.open(argv[5], fstream::out | fstream::binary);
         if(outfile.fail()) {cout << "\nFailed to create \"" << argv[5] << "\"" << endl; return 0;}
-        #ifdef DEBUG
+        #ifdef VERBOSE_DEBUG
         cout << "\tSuccessfully created \"" << argv[5] << "\"" << endl;
         #endif
     }
@@ -270,8 +336,8 @@ int main(int argc, char *argv[]) {
     infile.seekg(0, infile.end); // put cursor at end of file to count its byte length
     // if file larger than 2 billion (and change) bytes
     if (infile.tellg() > 0x7fffffff) {
-        cout << endl << argv[4] << " file size too large.";
-        cout << "\nMust be between 0 and 2,147,483,647 bytes long. Exiting DES\n";
+        cout << endl << argv[4] << " file size too large."
+             << "\nMust be between 0 and 2,147,483,647 bytes long. Exiting DES\n";
         return 0;
     }
     infile_byte_length = (uint64_t) infile.tellg(); // save file size in bytes
@@ -284,12 +350,12 @@ int main(int argc, char *argv[]) {
     // from the given 64 bit key and store them in roundkey[]
     // ------------------------------------------------------------------------
 
-    #ifdef DEBUG
+    #ifdef VERBOSE_DEBUG
     cout << "\nGenerating sixteen 48 bit round keys:";
     #endif
 
     // Compress 64 bit key to 56 bit permuted key ----------------------/
-    uint64_t compressed_56_bit_key = 0ULL;
+    uint64_t compressed_56_bit_key = 0;
 
     if(key & (1ULL << 63)) compressed_56_bit_key |= (1ULL << (56 - 8));
     if(key & (1ULL << 62)) compressed_56_bit_key |= (1ULL << (56 - 16));
@@ -355,7 +421,7 @@ int main(int argc, char *argv[]) {
     if(key & (1ULL << 2)) compressed_56_bit_key |= (1ULL << (56 - 37));
     if(key & (1ULL << 1)) compressed_56_bit_key |= (1ULL << (56 - 29));
 
-    #ifdef DEBUG
+    #ifdef VERBOSE_DEBUG
     cout << "\n\tcompressed_56_bit_key = ";
     print64(compressed_56_bit_key, 'b');
     cout << "\n\t                      = ";
@@ -364,14 +430,14 @@ int main(int argc, char *argv[]) {
     #endif
 
     // Compute the sixteen 48 bit round keys -----------------------------------/
-    uint32_t left;
-    uint32_t right;
+    uint64_t left;
+    uint64_t right;
     uint64_t compressed_48_bit_key;
 
     for(int i = 0; i < 16; ++i){
         // split compressed 56 bit key in half
-        left  = (uint32_t)(compressed_56_bit_key >> 28);
-        right = (uint32_t)(compressed_56_bit_key & 0x0000000FFFFFFF);
+        left  = compressed_56_bit_key >> 28;
+        right = compressed_56_bit_key & 0x0000000FFFFFFF;
 
         if(i == 0 || i == 1 || i == 8 || i == 15){
             // rotate left (circular shift) by 1 bit
@@ -380,16 +446,14 @@ int main(int argc, char *argv[]) {
         }
         else {
             // rotate left (circular shift) by 2 bits
-            left = ((left << 1) | (left >> 27)) & 0x0fffffff;
-            left = ((left << 1) | (left >> 27)) & 0x0fffffff;
-            right = ((right << 1) | (right >> 27)) & 0x0fffffff;
-            right = ((right << 1) | (right >> 27)) & 0x0fffffff;
+            left = ((left << 2) | (left >> 26)) & 0x0fffffff;
+            right = ((right << 2) | (right >> 26)) & 0x0fffffff;
         }
 
         // combine both rotated 28 bit halves
-        compressed_56_bit_key = (((uint64_t)left) << 28) | ((uint64_t)right);
+        compressed_56_bit_key = (left << 28) | right;
 
-        compressed_48_bit_key = 0ULL;
+        compressed_48_bit_key = 0;
 
         // Compression permutation from 56 bit key to 48 bit key
         if(compressed_56_bit_key & (1ULL << 55)) compressed_48_bit_key |= (1ULL << (48 - 5));
@@ -452,7 +516,7 @@ int main(int argc, char *argv[]) {
         // save key
         roundkey[i] = compressed_48_bit_key;
 
-        #ifdef DEBUG
+        #ifdef VERBOSE_DEBUG
         cout << "\troundkey[" << i << "] = ";
         print64(compressed_48_bit_key, 'b');
         cout << " = ";
@@ -467,7 +531,7 @@ int main(int argc, char *argv[]) {
     // ------------------------------------------------------------------------
 
     if(encrypt) {
-        #ifdef DEBUG
+        #ifdef VERBOSE_DEBUG
         cout << "\nEncryption:";
         #endif
 
@@ -516,7 +580,7 @@ int main(int argc, char *argv[]) {
             block = rand | infile_byte_length;  // merge both the 33 random bits and the file size
                                                 // into same 64 bit block
         }
-        #ifdef DEBUG
+        #ifdef VERBOSE_DEBUG
         cout << "\n\tGenerated 64 bit block with left 33 bits as random and right 31 bits as file size in bytes" << endl;
         cout << "\t\t<infile> size = 0d" << infile_byte_length << " bytes";
         printf("\n\t\t              = 0x%llX bytes", infile_byte_length);
@@ -525,9 +589,9 @@ int main(int argc, char *argv[]) {
         cout << "\n\t\t                = ";
         print64(block, 'x');
         cout << endl;
-        #endif
 
         cout << "\nEncrypting..." << endl;
+        #endif
 
         // Encrypt block
         DES();
@@ -540,14 +604,16 @@ int main(int argc, char *argv[]) {
             DES(); // Encrypt block
             writeBlock();
         }
+
+        cout << "\nSuccessfully ran DES encryption algorithm!";
     }
     else{
-        #ifdef DEBUG
+        #ifdef VERBOSE_DEBUG
         cout << "\nDecryption:";
         #endif
 
-        if(infile_byte_length < 8) {cout << "\nInput file size too small. Exiting DES."; return 0;}
-        if(infile_byte_length % 8) {cout << "\nInput file size not multiple of 8. Exiting DES."; return 0;}
+        if(infile_byte_length < 8) {cout << "\nInput file size too small. Exiting DES.\n"; return 0;}
+        if(infile_byte_length % 8) {cout << "\nInput file size not multiple of 8. Exiting DES.\n"; return 0;}
 
         // read first block containing original file length
         readBlock();
@@ -555,17 +621,16 @@ int main(int argc, char *argv[]) {
         // Decrypt block
         DES();
 
-
-
         // extract file length value by bit masking
         bytes_remaining = (unsigned int)(block & 0x000000007fffffff);
 
         // verify decrypted file length makes sense
         if(bytes_remaining > (infile_byte_length - 8) || bytes_remaining < (infile_byte_length - 15))
-            {cout << "\nError with decrypted file length (= " << bytes_remaining << " bytes). Exiting DES."; return 0;}
+            {cout << "\nError with decrypted file length (= "
+                  << bytes_remaining << " bytes). Exiting DES.\n"; return 0;}
 
         unsigned int total_bytes = bytes_remaining;
-        #ifdef DEBUG
+        #ifdef VERBOSE_DEBUG
         cout << "\n\tDecrypting " << total_bytes << " bytes (" << ceil(total_bytes / 8) << " blocks)\n";
         #endif
 
@@ -575,157 +640,158 @@ int main(int argc, char *argv[]) {
             DES(); // Decrypt block
             writeBlock();
         }
+
+        cout << "\nSuccessfully ran DES decryption algorithm!";
     }
 
     // print out time statistics
-    cout << "\nElapsed time = " << (float)(clock() - start_time)/CLOCKS_PER_SEC << " seconds.";
-
-    cout << "\nDone" << endl;
+    cout << "\nElapsed time = " << (float)(clock() - start_time)/CLOCKS_PER_SEC << " seconds.\nDone\n\n";
 
     return 0;
 }
 
 // Data Encryption Standard
-// Here, we'll run the 64 bit block through the DES algorithm
+// Here, we'll run the 64 bit block through the DES algorithm to
+// encrypt or decrypt the block.
 // 1) run block through initial permutation
 // 2) run block through the 16 rounds
-//      2.1)
-//      2.2)
-//      2.3)
-// TODO check if we have to swap after 16th round
-// 3) run block through final permutation
+//      2.1) Split 64 bit input into left and right 32 bit halves
+//      2.2) Expand 32 bit right half into 48 bit permuted right half
+//      2.3) Mixer step; mix 48 bit right half with appropriate 48 bit roundkey[]
+//           mix keys forwards if encrypting, backwards if decrypting
+//      2.4) Run 48 bit right half through the substitution boxes to get new 32 bit right half
+//      2.5) Run 32 bit right half through a 32 bit permutation
+//      2.6) Combine (XOR) original left half with new (highly modified) right half
+//      2.7) Merge left and right half into 64 bit block
+// 3) swap resulting block's left and right half one more time
+// 4) run block through final permutation
 void DES(){
 
     // ------------------------------------------------------------------------
     // Initial Permutation
     // ------------------------------------------------------------------------
 
-    uint64_t initial_permutation = 0ULL;
+    DES_rounds_block = 0;
 
-    if(block & (1ULL << 63)) initial_permutation |= (1ULL << (64 - 40));
-    if(block & (1ULL << 62)) initial_permutation |= (1ULL << (64 - 8));
-    if(block & (1ULL << 61)) initial_permutation |= (1ULL << (64 - 48));
-    if(block & (1ULL << 60)) initial_permutation |= (1ULL << (64 - 16));
-    if(block & (1ULL << 59)) initial_permutation |= (1ULL << (64 - 56));
-    if(block & (1ULL << 58)) initial_permutation |= (1ULL << (64 - 24));
-    if(block & (1ULL << 57)) initial_permutation |= (1ULL << (64 - 64));
-    if(block & (1ULL << 56)) initial_permutation |= (1ULL << (64 - 32));
-    if(block & (1ULL << 55)) initial_permutation |= (1ULL << (64 - 39));
-    if(block & (1ULL << 54)) initial_permutation |= (1ULL << (64 - 7));
-    if(block & (1ULL << 53)) initial_permutation |= (1ULL << (64 - 47));
-    if(block & (1ULL << 52)) initial_permutation |= (1ULL << (64 - 15));
-    if(block & (1ULL << 51)) initial_permutation |= (1ULL << (64 - 55));
-    if(block & (1ULL << 50)) initial_permutation |= (1ULL << (64 - 23));
-    if(block & (1ULL << 49)) initial_permutation |= (1ULL << (64 - 63));
-    if(block & (1ULL << 48)) initial_permutation |= (1ULL << (64 - 31));
+    if(block & (1ULL << 63)) DES_rounds_block |= (1ULL << (64 - 40));
+    if(block & (1ULL << 62)) DES_rounds_block |= (1ULL << (64 - 8));
+    if(block & (1ULL << 61)) DES_rounds_block |= (1ULL << (64 - 48));
+    if(block & (1ULL << 60)) DES_rounds_block |= (1ULL << (64 - 16));
+    if(block & (1ULL << 59)) DES_rounds_block |= (1ULL << (64 - 56));
+    if(block & (1ULL << 58)) DES_rounds_block |= (1ULL << (64 - 24));
+    if(block & (1ULL << 57)) DES_rounds_block |= (1ULL << (64 - 64));
+    if(block & (1ULL << 56)) DES_rounds_block |= (1ULL << (64 - 32));
+    if(block & (1ULL << 55)) DES_rounds_block |= (1ULL << (64 - 39));
+    if(block & (1ULL << 54)) DES_rounds_block |= (1ULL << (64 - 7));
+    if(block & (1ULL << 53)) DES_rounds_block |= (1ULL << (64 - 47));
+    if(block & (1ULL << 52)) DES_rounds_block |= (1ULL << (64 - 15));
+    if(block & (1ULL << 51)) DES_rounds_block |= (1ULL << (64 - 55));
+    if(block & (1ULL << 50)) DES_rounds_block |= (1ULL << (64 - 23));
+    if(block & (1ULL << 49)) DES_rounds_block |= (1ULL << (64 - 63));
+    if(block & (1ULL << 48)) DES_rounds_block |= (1ULL << (64 - 31));
 
-    if(block & (1ULL << 47)) initial_permutation |= (1ULL << (64 - 38));
-    if(block & (1ULL << 46)) initial_permutation |= (1ULL << (64 - 6));
-    if(block & (1ULL << 45)) initial_permutation |= (1ULL << (64 - 46));
-    if(block & (1ULL << 44)) initial_permutation |= (1ULL << (64 - 14));
-    if(block & (1ULL << 43)) initial_permutation |= (1ULL << (64 - 54));
-    if(block & (1ULL << 42)) initial_permutation |= (1ULL << (64 - 22));
-    if(block & (1ULL << 41)) initial_permutation |= (1ULL << (64 - 62));
-    if(block & (1ULL << 40)) initial_permutation |= (1ULL << (64 - 30));
-    if(block & (1ULL << 39)) initial_permutation |= (1ULL << (64 - 37));
-    if(block & (1ULL << 38)) initial_permutation |= (1ULL << (64 - 5));
-    if(block & (1ULL << 37)) initial_permutation |= (1ULL << (64 - 45));
-    if(block & (1ULL << 36)) initial_permutation |= (1ULL << (64 - 13));
-    if(block & (1ULL << 35)) initial_permutation |= (1ULL << (64 - 53));
-    if(block & (1ULL << 34)) initial_permutation |= (1ULL << (64 - 21));
-    if(block & (1ULL << 33)) initial_permutation |= (1ULL << (64 - 61));
-    if(block & (1ULL << 32)) initial_permutation |= (1ULL << (64 - 29));
+    if(block & (1ULL << 47)) DES_rounds_block |= (1ULL << (64 - 38));
+    if(block & (1ULL << 46)) DES_rounds_block |= (1ULL << (64 - 6));
+    if(block & (1ULL << 45)) DES_rounds_block |= (1ULL << (64 - 46));
+    if(block & (1ULL << 44)) DES_rounds_block |= (1ULL << (64 - 14));
+    if(block & (1ULL << 43)) DES_rounds_block |= (1ULL << (64 - 54));
+    if(block & (1ULL << 42)) DES_rounds_block |= (1ULL << (64 - 22));
+    if(block & (1ULL << 41)) DES_rounds_block |= (1ULL << (64 - 62));
+    if(block & (1ULL << 40)) DES_rounds_block |= (1ULL << (64 - 30));
+    if(block & (1ULL << 39)) DES_rounds_block |= (1ULL << (64 - 37));
+    if(block & (1ULL << 38)) DES_rounds_block |= (1ULL << (64 - 5));
+    if(block & (1ULL << 37)) DES_rounds_block |= (1ULL << (64 - 45));
+    if(block & (1ULL << 36)) DES_rounds_block |= (1ULL << (64 - 13));
+    if(block & (1ULL << 35)) DES_rounds_block |= (1ULL << (64 - 53));
+    if(block & (1ULL << 34)) DES_rounds_block |= (1ULL << (64 - 21));
+    if(block & (1ULL << 33)) DES_rounds_block |= (1ULL << (64 - 61));
+    if(block & (1ULL << 32)) DES_rounds_block |= (1ULL << (64 - 29));
 
-    if(block & (1ULL << 31)) initial_permutation |= (1ULL << (64 - 36));
-    if(block & (1ULL << 30)) initial_permutation |= (1ULL << (64 - 4));
-    if(block & (1ULL << 29)) initial_permutation |= (1ULL << (64 - 44));
-    if(block & (1ULL << 28)) initial_permutation |= (1ULL << (64 - 12));
-    if(block & (1ULL << 27)) initial_permutation |= (1ULL << (64 - 52));
-    if(block & (1ULL << 26)) initial_permutation |= (1ULL << (64 - 20));
-    if(block & (1ULL << 25)) initial_permutation |= (1ULL << (64 - 60));
-    if(block & (1ULL << 24)) initial_permutation |= (1ULL << (64 - 28));
-    if(block & (1ULL << 23)) initial_permutation |= (1ULL << (64 - 35));
-    if(block & (1ULL << 22)) initial_permutation |= (1ULL << (64 - 3));
-    if(block & (1ULL << 21)) initial_permutation |= (1ULL << (64 - 43));
-    if(block & (1ULL << 20)) initial_permutation |= (1ULL << (64 - 11));
-    if(block & (1ULL << 19)) initial_permutation |= (1ULL << (64 - 51));
-    if(block & (1ULL << 18)) initial_permutation |= (1ULL << (64 - 19));
-    if(block & (1ULL << 17)) initial_permutation |= (1ULL << (64 - 59));
-    if(block & (1ULL << 16)) initial_permutation |= (1ULL << (64 - 27));
+    if(block & (1ULL << 31)) DES_rounds_block |= (1ULL << (64 - 36));
+    if(block & (1ULL << 30)) DES_rounds_block |= (1ULL << (64 - 4));
+    if(block & (1ULL << 29)) DES_rounds_block |= (1ULL << (64 - 44));
+    if(block & (1ULL << 28)) DES_rounds_block |= (1ULL << (64 - 12));
+    if(block & (1ULL << 27)) DES_rounds_block |= (1ULL << (64 - 52));
+    if(block & (1ULL << 26)) DES_rounds_block |= (1ULL << (64 - 20));
+    if(block & (1ULL << 25)) DES_rounds_block |= (1ULL << (64 - 60));
+    if(block & (1ULL << 24)) DES_rounds_block |= (1ULL << (64 - 28));
+    if(block & (1ULL << 23)) DES_rounds_block |= (1ULL << (64 - 35));
+    if(block & (1ULL << 22)) DES_rounds_block |= (1ULL << (64 - 3));
+    if(block & (1ULL << 21)) DES_rounds_block |= (1ULL << (64 - 43));
+    if(block & (1ULL << 20)) DES_rounds_block |= (1ULL << (64 - 11));
+    if(block & (1ULL << 19)) DES_rounds_block |= (1ULL << (64 - 51));
+    if(block & (1ULL << 18)) DES_rounds_block |= (1ULL << (64 - 19));
+    if(block & (1ULL << 17)) DES_rounds_block |= (1ULL << (64 - 59));
+    if(block & (1ULL << 16)) DES_rounds_block |= (1ULL << (64 - 27));
 
-    if(block & (1ULL << 15)) initial_permutation |= (1ULL << (64 - 34));
-    if(block & (1ULL << 14)) initial_permutation |= (1ULL << (64 - 2));
-    if(block & (1ULL << 13)) initial_permutation |= (1ULL << (64 - 42));
-    if(block & (1ULL << 12)) initial_permutation |= (1ULL << (64 - 10));
-    if(block & (1ULL << 11)) initial_permutation |= (1ULL << (64 - 50));
-    if(block & (1ULL << 10)) initial_permutation |= (1ULL << (64 - 18));
-    if(block & (1ULL << 9)) initial_permutation |= (1ULL << (64 - 58));
-    if(block & (1ULL << 8)) initial_permutation |= (1ULL << (64 - 26));
-    if(block & (1ULL << 7)) initial_permutation |= (1ULL << (64 - 33));
-    if(block & (1ULL << 6)) initial_permutation |= (1ULL << (64 - 1));
-    if(block & (1ULL << 5)) initial_permutation |= (1ULL << (64 - 41));
-    if(block & (1ULL << 4)) initial_permutation |= (1ULL << (64 - 9));
-    if(block & (1ULL << 3)) initial_permutation |= (1ULL << (64 - 49));
-    if(block & (1ULL << 2)) initial_permutation |= (1ULL << (64 - 17));
-    if(block & (1ULL << 1)) initial_permutation |= (1ULL << (64 - 57));
-    if(block & (1ULL << 0)) initial_permutation |= (1ULL << (64 - 25));
+    if(block & (1ULL << 15)) DES_rounds_block |= (1ULL << (64 - 34));
+    if(block & (1ULL << 14)) DES_rounds_block |= (1ULL << (64 - 2));
+    if(block & (1ULL << 13)) DES_rounds_block |= (1ULL << (64 - 42));
+    if(block & (1ULL << 12)) DES_rounds_block |= (1ULL << (64 - 10));
+    if(block & (1ULL << 11)) DES_rounds_block |= (1ULL << (64 - 50));
+    if(block & (1ULL << 10)) DES_rounds_block |= (1ULL << (64 - 18));
+    if(block & (1ULL << 9)) DES_rounds_block |= (1ULL << (64 - 58));
+    if(block & (1ULL << 8)) DES_rounds_block |= (1ULL << (64 - 26));
+    if(block & (1ULL << 7)) DES_rounds_block |= (1ULL << (64 - 33));
+    if(block & (1ULL << 6)) DES_rounds_block |= (1ULL << (64 - 1));
+    if(block & (1ULL << 5)) DES_rounds_block |= (1ULL << (64 - 41));
+    if(block & (1ULL << 4)) DES_rounds_block |= (1ULL << (64 - 9));
+    if(block & (1ULL << 3)) DES_rounds_block |= (1ULL << (64 - 49));
+    if(block & (1ULL << 2)) DES_rounds_block |= (1ULL << (64 - 17));
+    if(block & (1ULL << 1)) DES_rounds_block |= (1ULL << (64 - 57));
+    if(block & (1ULL << 0)) DES_rounds_block |= (1ULL << (64 - 25));
 
     // ------------------------------------------------------------------------
     // Go through the 16 Rounds
     // ------------------------------------------------------------------------
 
-    uint32_t left32;
-    uint32_t right32;
-    uint32_t saved_right32;
-    uint64_t rounds_block = initial_permutation;
-
     for(int round = 0; round < 16; ++round){
         // Split 64 bit input into left and right 32 bit halves
-        left32  = (uint32_t)(rounds_block >> 32);
-        right32 = (uint32_t)(rounds_block & 0x00000000ffffffff);
-        saved_right32 = right32;
+        DES_left32 = DES_rounds_block >> 32;
+        DES_right32 = DES_rounds_block & 0x00000000ffffffff;
+        saved_right32 = DES_right32;
 
         // Expand 32 bit right half into 48 bit permuted right half
-        uint64_t right48 = 0ULL;
-        if(right32 & (1ULL << 31)) {right48 |= (1ULL << (48 - 2)); right48 |= (1ULL << (48 - 48));}
-        if(right32 & (1ULL << 30))  right48 |= (1ULL << (48 - 3));
-        if(right32 & (1ULL << 29))  right48 |= (1ULL << (48 - 4));
-        if(right32 & (1ULL << 28)) {right48 |= (1ULL << (48 - 5)); right48 |= (1ULL << (48 - 7));}
-        if(right32 & (1ULL << 27)) {right48 |= (1ULL << (48 - 6)); right48 |= (1ULL << (48 - 8));}
-        if(right32 & (1ULL << 26))  right48 |= (1ULL << (48 - 9));
-        if(right32 & (1ULL << 25))  right48 |= (1ULL << (48 - 10));
-        if(right32 & (1ULL << 24)) {right48 |= (1ULL << (48 - 11)); right48 |= (1ULL << (48 - 13));}
-        if(right32 & (1ULL << 23)) {right48 |= (1ULL << (48 - 12)); right48 |= (1ULL << (48 - 14));}
-        if(right32 & (1ULL << 22))  right48 |= (1ULL << (48 - 15));
-        if(right32 & (1ULL << 21))  right48 |= (1ULL << (48 - 16));
-        if(right32 & (1ULL << 20)) {right48 |= (1ULL << (48 - 17)); right48 |= (1ULL << (48 - 19));}
-        if(right32 & (1ULL << 19)) {right48 |= (1ULL << (48 - 18)); right48 |= (1ULL << (48 - 20));}
-        if(right32 & (1ULL << 18))  right48 |= (1ULL << (48 - 21));
-        if(right32 & (1ULL << 17))  right48 |= (1ULL << (48 - 22));
-        if(right32 & (1ULL << 16)) {right48 |= (1ULL << (48 - 23)); right48 |= (1ULL << (48 - 25));}
-        if(right32 & (1ULL << 15)) {right48 |= (1ULL << (48 - 24)); right48 |= (1ULL << (48 - 26));}
-        if(right32 & (1ULL << 14))  right48 |= (1ULL << (48 - 27));
-        if(right32 & (1ULL << 13))  right48 |= (1ULL << (48 - 28));
-        if(right32 & (1ULL << 12)) {right48 |= (1ULL << (48 - 29)); right48 |= (1ULL << (48 - 31));}
-        if(right32 & (1ULL << 11)) {right48 |= (1ULL << (48 - 30)); right48 |= (1ULL << (48 - 32));}
-        if(right32 & (1ULL << 10))  right48 |= (1ULL << (48 - 33));
-        if(right32 & (1ULL << 9))  right48 |= (1ULL << (48 - 34));
-        if(right32 & (1ULL << 8)) {right48 |= (1ULL << (48 - 35)); right48 |= (1ULL << (48 - 37));}
-        if(right32 & (1ULL << 7)) {right48 |= (1ULL << (48 - 36)); right48 |= (1ULL << (48 - 38));}
-        if(right32 & (1ULL << 6))  right48 |= (1ULL << (48 - 39));
-        if(right32 & (1ULL << 5))  right48 |= (1ULL << (48 - 40));
-        if(right32 & (1ULL << 4)) {right48 |= (1ULL << (48 - 41)); right48 |= (1ULL << (48 - 43));}
-        if(right32 & (1ULL << 3)) {right48 |= (1ULL << (48 - 42)); right48 |= (1ULL << (48 - 44));}
-        if(right32 & (1ULL << 2))  right48 |= (1ULL << (48 - 45));
-        if(right32 & (1ULL << 1))  right48 |= (1ULL << (48 - 46));
-        if(right32 & (1ULL << 0)) {right48 |= (1ULL << (48 - 47)); right48 |= (1ULL << (48 - 1));}
+        uint64_t right48 = 0;
+        if(DES_right32 & (1ULL << 31)) { right48 |= ((1ULL << (48 - 2)) | (1ULL << (48 - 48)));}
+        if(DES_right32 & (1ULL << 30)) right48 |= (1ULL << (48 - 3));
+        if(DES_right32 & (1ULL << 29)) right48 |= (1ULL << (48 - 4));
+        if(DES_right32 & (1ULL << 28)) { right48 |= ((1ULL << (48 - 5)) | (1ULL << (48 - 7)));}
+        if(DES_right32 & (1ULL << 27)) { right48 |= ((1ULL << (48 - 6)) | (1ULL << (48 - 8)));}
+        if(DES_right32 & (1ULL << 26)) right48 |= (1ULL << (48 - 9));
+        if(DES_right32 & (1ULL << 25)) right48 |= (1ULL << (48 - 10));
+        if(DES_right32 & (1ULL << 24)) { right48 |= ((1ULL << (48 - 11)) | (1ULL << (48 - 13)));}
+        if(DES_right32 & (1ULL << 23)) { right48 |= ((1ULL << (48 - 12)) | (1ULL << (48 - 14)));}
+        if(DES_right32 & (1ULL << 22)) right48 |= (1ULL << (48 - 15));
+        if(DES_right32 & (1ULL << 21)) right48 |= (1ULL << (48 - 16));
+        if(DES_right32 & (1ULL << 20)) { right48 |= ((1ULL << (48 - 17)) | (1ULL << (48 - 19)));}
+        if(DES_right32 & (1ULL << 19)) { right48 |= ((1ULL << (48 - 18)) | (1ULL << (48 - 20)));}
+        if(DES_right32 & (1ULL << 18)) right48 |= (1ULL << (48 - 21));
+        if(DES_right32 & (1ULL << 17)) right48 |= (1ULL << (48 - 22));
+        if(DES_right32 & (1ULL << 16)) { right48 |= ((1ULL << (48 - 23)) | (1ULL << (48 - 25)));}
+        if(DES_right32 & (1ULL << 15)) { right48 |= ((1ULL << (48 - 24)) | (1ULL << (48 - 26)));}
+        if(DES_right32 & (1ULL << 14)) right48 |= (1ULL << (48 - 27));
+        if(DES_right32 & (1ULL << 13)) right48 |= (1ULL << (48 - 28));
+        if(DES_right32 & (1ULL << 12)) { right48 |= ((1ULL << (48 - 29)) | (1ULL << (48 - 31)));}
+        if(DES_right32 & (1ULL << 11)) { right48 |= ((1ULL << (48 - 30)) | (1ULL << (48 - 32)));}
+        if(DES_right32 & (1ULL << 10)) right48 |= (1ULL << (48 - 33));
+        if(DES_right32 & (1ULL << 9)) right48 |= (1ULL << (48 - 34));
+        if(DES_right32 & (1ULL << 8)) { right48 |= ((1ULL << (48 - 35)) | (1ULL << (48 - 37)));}
+        if(DES_right32 & (1ULL << 7)) { right48 |= ((1ULL << (48 - 36)) | (1ULL << (48 - 38)));}
+        if(DES_right32 & (1ULL << 6)) right48 |= (1ULL << (48 - 39));
+        if(DES_right32 & (1ULL << 5)) right48 |= (1ULL << (48 - 40));
+        if(DES_right32 & (1ULL << 4)) { right48 |= ((1ULL << (48 - 41)) | (1ULL << (48 - 43)));}
+        if(DES_right32 & (1ULL << 3)) { right48 |= ((1ULL << (48 - 42)) | (1ULL << (48 - 44)));}
+        if(DES_right32 & (1ULL << 2)) right48 |= (1ULL << (48 - 45));
+        if(DES_right32 & (1ULL << 1)) right48 |= (1ULL << (48 - 46));
+        if(DES_right32 & (1ULL << 0)) { right48 |= ((1ULL << (48 - 47)) | (1ULL << (48 - 1)));}
 
         // Mixer step; mix right48 with appropriate 48 bit roundkey[]
         // mix keys forwards if encrypting, backwards if decrypting
         if(encrypt) right48 ^= roundkey[round];
         else        right48 ^= roundkey[15 - round];
 
-        right32 = 0;
+        DES_right32 = 0;
 
 //        cout << "\nright48 = ";
 //        print64(right48, 'b');
@@ -738,27 +804,27 @@ void DES(){
         // 3) Take first and last bit of each chunk to determine row, middle 4 bits determine column
         //    ex. abcdef = a bcde f = af bcde
         //    ex. 110100 = 1 1010 0 = 10 1010 = value at row 2 col 10 for specific s-box
-        // 4) Use *(*(s1 + i) + j); returns the value at row i col j from s1 (faster? than s1[i][j] if using unoptimized compiler)
+        // 4) Use s1[i][j]; returns the value at row i col j from s1
         // 5) shift value returned by appropriate s-box into appropriate location in 32 bit right half block
-        right32 |= (uint32_t)(*(*(s1 + (((right48 >> 46) & 0b10) | ((right48 >> 42) & 0b000001))) + ((right48 >> 43) & 0b01111))) << 28;
-        right32 |= (uint32_t)(*(*(s2 + (((right48 >> 40) & 0b10) | ((right48 >> 36) & 0b000001))) + ((right48 >> 37) & 0b01111))) << 24;
-        right32 |= (uint32_t)(*(*(s3 + (((right48 >> 34) & 0b10) | ((right48 >> 30) & 0b000001))) + ((right48 >> 31) & 0b01111))) << 20;
-        right32 |= (uint32_t)(*(*(s4 + (((right48 >> 28) & 0b10) | ((right48 >> 24) & 0b000001))) + ((right48 >> 25) & 0b01111))) << 16;
-        right32 |= (uint32_t)(*(*(s5 + (((right48 >> 22) & 0b10) | ((right48 >> 18) & 0b000001))) + ((right48 >> 19) & 0b01111))) << 12;
-        right32 |= (uint32_t)(*(*(s6 + (((right48 >> 16) & 0b10) | ((right48 >> 12) & 0b000001))) + ((right48 >> 13) & 0b01111))) << 8;
-        right32 |= (uint32_t)(*(*(s7 + (((right48 >> 10) & 0b10) | ((right48 >> 6) & 0b000001))) + ((right48 >> 7) & 0b01111))) << 4;
-        right32 |= (uint32_t)(*(*(s8 + (((right48 >> 4) & 0b10) | ((right48) & 0b000001))) + ((right48 >> 1) & 0b01111)));
+        DES_right32 |= (uint64_t)(s1[(((right48 >> 46) & 0b10) | ((right48 >> 42) & 0b000001))][((right48 >> 43) & 0b01111)]) << 28;
+        DES_right32 |= (uint64_t)(s2[(((right48 >> 40) & 0b10) | ((right48 >> 36) & 0b000001))][((right48 >> 37) & 0b01111)]) << 24;
+        DES_right32 |= (uint64_t)(s3[(((right48 >> 34) & 0b10) | ((right48 >> 30) & 0b000001))][((right48 >> 31) & 0b01111)]) << 20;
+        DES_right32 |= (uint64_t)(s4[(((right48 >> 28) & 0b10) | ((right48 >> 24) & 0b000001))][((right48 >> 25) & 0b01111)]) << 16;
+        DES_right32 |= (uint64_t)(s5[(((right48 >> 22) & 0b10) | ((right48 >> 18) & 0b000001))][((right48 >> 19) & 0b01111)]) << 12;
+        DES_right32 |= (uint64_t)(s6[(((right48 >> 16) & 0b10) | ((right48 >> 12) & 0b000001))][((right48 >> 13) & 0b01111)]) << 8;
+        DES_right32 |= (uint64_t)(s7[(((right48 >> 10) & 0b10) | ((right48 >> 6) & 0b000001))][((right48 >> 7) & 0b01111)]) << 4;
+        DES_right32 |= (uint64_t)(s8[(((right48 >> 4) & 0b10) | ((right48) & 0b000001))][((right48 >> 1) & 0b01111)]);
 
-//        right32 |= (uint32_t)(s1[(((right48 >> 46) & 0b10) | ((right48 >> 42) & 0b000001))][((right48 >> 43) & 0b01111)]) << 28;
-//        right32 |= (uint32_t)(s2[(((right48 >> 40) & 0b10) | ((right48 >> 36) & 0b000001))][((right48 >> 37) & 0b01111)]) << 24;
-//        right32 |= (uint32_t)(s3[(((right48 >> 34) & 0b10) | ((right48 >> 30) & 0b000001))][((right48 >> 31) & 0b01111)]) << 20;
-//        right32 |= (uint32_t)(s4[(((right48 >> 28) & 0b10) | ((right48 >> 24) & 0b000001))][((right48 >> 25) & 0b01111)]) << 16;
-//        right32 |= (uint32_t)(s5[(((right48 >> 22) & 0b10) | ((right48 >> 18) & 0b000001))][((right48 >> 19) & 0b01111)]) << 12;
-//        right32 |= (uint32_t)(s6[(((right48 >> 16) & 0b10) | ((right48 >> 12) & 0b000001))][((right48 >> 13) & 0b01111)]) << 8;
-//        right32 |= (uint32_t)(s7[(((right48 >> 10) & 0b10) | ((right48 >> 6) & 0b000001))][((right48 >> 7) & 0b01111)]) << 4;
-//        right32 |= (uint32_t)(s8[(((right48 >> 4) & 0b10) | ((right48) & 0b000001))][((right48 >> 1) & 0b01111)]);
+//        DES_right32 |= (uint64_t)(s1[((((right48 >> 46) & 0b10) | ((right48 >> 42) & 0b000001)) << 4) + ((right48 >> 43) & 0b01111)]) << 28;
+//        DES_right32 |= (uint64_t)(s2[((((right48 >> 40) & 0b10) | ((right48 >> 36) & 0b000001)) << 4) + (((right48 >> 37) & 0b01111))]) << 24;
+//        DES_right32 |= (uint64_t)(s3[((((right48 >> 34) & 0b10) | ((right48 >> 30) & 0b000001)) << 4) + (((right48 >> 31) & 0b01111))]) << 20;
+//        DES_right32 |= (uint64_t)(s4[((((right48 >> 28) & 0b10) | ((right48 >> 24) & 0b000001)) << 4) + (((right48 >> 25) & 0b01111))]) << 16;
+//        DES_right32 |= (uint64_t)(s5[((((right48 >> 22) & 0b10) | ((right48 >> 18) & 0b000001)) << 4) + (((right48 >> 19) & 0b01111))]) << 12;
+//        DES_right32 |= (uint64_t)(s6[((((right48 >> 16) & 0b10) | ((right48 >> 12) & 0b000001)) << 4) + (((right48 >> 13) & 0b01111))]) << 8;
+//        DES_right32 |= (uint64_t)(s7[((((right48 >> 10) & 0b10) | ((right48 >> 6) & 0b000001)) << 4) + (((right48 >> 7) & 0b01111))]) << 4;
+//        DES_right32 |= (uint64_t)(s8[((((right48 >> 4) & 0b10) | ((right48) & 0b000001)) << 4) + (((right48 >> 1) & 0b01111))]);
 
-//        uint64_t temp32 = right32;
+//        uint64_t temp32 = DES_right32;
 //        cout << "\nright32 = ";
 //        print64(temp32, 'b');
 //        cout << "\n        = ";
@@ -767,131 +833,130 @@ void DES(){
 
 
         // Post S-Box right side permutation
-        uint32_t temp = right32;
-        right32 = 0;
-        if(temp & (1ULL << 31)) right32 |= (1ULL << (32 - 9));
-        if(temp & (1ULL << 30)) right32 |= (1ULL << (32 - 17));
-        if(temp & (1ULL << 29)) right32 |= (1ULL << (32 - 23));
-        if(temp & (1ULL << 28)) right32 |= (1ULL << (32 - 31));
-        if(temp & (1ULL << 27)) right32 |= (1ULL << (32 - 13));
-        if(temp & (1ULL << 26)) right32 |= (1ULL << (32 - 28));
-        if(temp & (1ULL << 25)) right32 |= (1ULL << (32 - 2));
-        if(temp & (1ULL << 24)) right32 |= (1ULL << (32 - 18));
-        if(temp & (1ULL << 23)) right32 |= (1ULL << (32 - 24));
-        if(temp & (1ULL << 22)) right32 |= (1ULL << (32 - 16));
-        if(temp & (1ULL << 21)) right32 |= (1ULL << (32 - 30));
-        if(temp & (1ULL << 20)) right32 |= (1ULL << (32 - 6));
-        if(temp & (1ULL << 19)) right32 |= (1ULL << (32 - 26));
-        if(temp & (1ULL << 18)) right32 |= (1ULL << (32 - 20));
-        if(temp & (1ULL << 17)) right32 |= (1ULL << (32 - 10));
-        if(temp & (1ULL << 16)) right32 |= (1ULL << (32 - 1));
+        uint64_t temp = DES_right32;
+        DES_right32 = 0;
+        if(temp & (1ULL << 31)) DES_right32 |= (1ULL << (32 - 9));
+        if(temp & (1ULL << 30)) DES_right32 |= (1ULL << (32 - 17));
+        if(temp & (1ULL << 29)) DES_right32 |= (1ULL << (32 - 23));
+        if(temp & (1ULL << 28)) DES_right32 |= (1ULL << (32 - 31));
+        if(temp & (1ULL << 27)) DES_right32 |= (1ULL << (32 - 13));
+        if(temp & (1ULL << 26)) DES_right32 |= (1ULL << (32 - 28));
+        if(temp & (1ULL << 25)) DES_right32 |= (1ULL << (32 - 2));
+        if(temp & (1ULL << 24)) DES_right32 |= (1ULL << (32 - 18));
+        if(temp & (1ULL << 23)) DES_right32 |= (1ULL << (32 - 24));
+        if(temp & (1ULL << 22)) DES_right32 |= (1ULL << (32 - 16));
+        if(temp & (1ULL << 21)) DES_right32 |= (1ULL << (32 - 30));
+        if(temp & (1ULL << 20)) DES_right32 |= (1ULL << (32 - 6));
+        if(temp & (1ULL << 19)) DES_right32 |= (1ULL << (32 - 26));
+        if(temp & (1ULL << 18)) DES_right32 |= (1ULL << (32 - 20));
+        if(temp & (1ULL << 17)) DES_right32 |= (1ULL << (32 - 10));
+        if(temp & (1ULL << 16)) DES_right32 |= (1ULL << (32 - 1));
 
-        if(temp & (1ULL << 15)) right32 |= (1ULL << (32 - 8));
-        if(temp & (1ULL << 14)) right32 |= (1ULL << (32 - 14));
-        if(temp & (1ULL << 13)) right32 |= (1ULL << (32 - 25));
-        if(temp & (1ULL << 12)) right32 |= (1ULL << (32 - 3));
-        if(temp & (1ULL << 11)) right32 |= (1ULL << (32 - 4));
-        if(temp & (1ULL << 10)) right32 |= (1ULL << (32 - 29));
-        if(temp & (1ULL << 9)) right32 |= (1ULL << (32 - 11));
-        if(temp & (1ULL << 8)) right32 |= (1ULL << (32 - 19));
-        if(temp & (1ULL << 7)) right32 |= (1ULL << (32 - 32));
-        if(temp & (1ULL << 6)) right32 |= (1ULL << (32 - 12));
-        if(temp & (1ULL << 5)) right32 |= (1ULL << (32 - 22));
-        if(temp & (1ULL << 4)) right32 |= (1ULL << (32 - 7));
-        if(temp & (1ULL << 3)) right32 |= (1ULL << (32 - 5));
-        if(temp & (1ULL << 2)) right32 |= (1ULL << (32 - 27));
-        if(temp & (1ULL << 1)) right32 |= (1ULL << (32 - 15));
-        if(temp & (1ULL << 0)) right32 |= (1ULL << (32 - 21));
+        if(temp & (1ULL << 15)) DES_right32 |= (1ULL << (32 - 8));
+        if(temp & (1ULL << 14)) DES_right32 |= (1ULL << (32 - 14));
+        if(temp & (1ULL << 13)) DES_right32 |= (1ULL << (32 - 25));
+        if(temp & (1ULL << 12)) DES_right32 |= (1ULL << (32 - 3));
+        if(temp & (1ULL << 11)) DES_right32 |= (1ULL << (32 - 4));
+        if(temp & (1ULL << 10)) DES_right32 |= (1ULL << (32 - 29));
+        if(temp & (1ULL << 9)) DES_right32 |= (1ULL << (32 - 11));
+        if(temp & (1ULL << 8)) DES_right32 |= (1ULL << (32 - 19));
+        if(temp & (1ULL << 7)) DES_right32 |= (1ULL << (32 - 32));
+        if(temp & (1ULL << 6)) DES_right32 |= (1ULL << (32 - 12));
+        if(temp & (1ULL << 5)) DES_right32 |= (1ULL << (32 - 22));
+        if(temp & (1ULL << 4)) DES_right32 |= (1ULL << (32 - 7));
+        if(temp & (1ULL << 3)) DES_right32 |= (1ULL << (32 - 5));
+        if(temp & (1ULL << 2)) DES_right32 |= (1ULL << (32 - 27));
+        if(temp & (1ULL << 1)) DES_right32 |= (1ULL << (32 - 15));
+        if(temp & (1ULL << 0)) DES_right32 |= (1ULL << (32 - 21));
 
         // Combine left half with new (highly modified) right half
-        right32 ^= left32;
+        DES_right32 ^= DES_left32;
 
         // Merge left and right half
-        rounds_block = ((uint64_t)saved_right32 << 32) | (uint64_t)right32;
-        //rounds_block = ((uint64_t)right32 << 32) | (uint64_t)saved_right32;
+        DES_rounds_block = (saved_right32 << 32) | DES_right32;
     }
 
     // Split resulting rounds block and swap left and right halves one more time
-    left32  = (uint32_t)(rounds_block >> 32);
-    right32 = (uint32_t)(rounds_block & 0x00000000ffffffff);
+    DES_left32 = DES_rounds_block >> 32;
+    DES_right32 = DES_rounds_block & 0x00000000ffffffff;
 
     // Merge left and right half
-    rounds_block = ((uint64_t)right32 << 32) | (uint64_t)left32;
+    DES_rounds_block = (DES_right32 << 32) | DES_left32;
 
 
     // ------------------------------------------------------------------------
     // Final Permutation
     // ------------------------------------------------------------------------
 
-    block = 0ULL;
+    block = 0;
 
-    if(rounds_block & (1ULL << 63)) block |= (1ULL << (64 - 58));
-    if(rounds_block & (1ULL << 62)) block |= (1ULL << (64 - 50));
-    if(rounds_block & (1ULL << 61)) block |= (1ULL << (64 - 42));
-    if(rounds_block & (1ULL << 60)) block |= (1ULL << (64 - 34));
-    if(rounds_block & (1ULL << 59)) block |= (1ULL << (64 - 26));
-    if(rounds_block & (1ULL << 58)) block |= (1ULL << (64 - 18));
-    if(rounds_block & (1ULL << 57)) block |= (1ULL << (64 - 10));
-    if(rounds_block & (1ULL << 56)) block |= (1ULL << (64 - 2));
-    if(rounds_block & (1ULL << 55)) block |= (1ULL << (64 - 60));
-    if(rounds_block & (1ULL << 54)) block |= (1ULL << (64 - 52));
-    if(rounds_block & (1ULL << 53)) block |= (1ULL << (64 - 44));
-    if(rounds_block & (1ULL << 52)) block |= (1ULL << (64 - 36));
-    if(rounds_block & (1ULL << 51)) block |= (1ULL << (64 - 28));
-    if(rounds_block & (1ULL << 50)) block |= (1ULL << (64 - 20));
-    if(rounds_block & (1ULL << 49)) block |= (1ULL << (64 - 12));
-    if(rounds_block & (1ULL << 48)) block |= (1ULL << (64 - 4));
+    if(DES_rounds_block & (1ULL << 63)) block |= (1ULL << (64 - 58));
+    if(DES_rounds_block & (1ULL << 62)) block |= (1ULL << (64 - 50));
+    if(DES_rounds_block & (1ULL << 61)) block |= (1ULL << (64 - 42));
+    if(DES_rounds_block & (1ULL << 60)) block |= (1ULL << (64 - 34));
+    if(DES_rounds_block & (1ULL << 59)) block |= (1ULL << (64 - 26));
+    if(DES_rounds_block & (1ULL << 58)) block |= (1ULL << (64 - 18));
+    if(DES_rounds_block & (1ULL << 57)) block |= (1ULL << (64 - 10));
+    if(DES_rounds_block & (1ULL << 56)) block |= (1ULL << (64 - 2));
+    if(DES_rounds_block & (1ULL << 55)) block |= (1ULL << (64 - 60));
+    if(DES_rounds_block & (1ULL << 54)) block |= (1ULL << (64 - 52));
+    if(DES_rounds_block & (1ULL << 53)) block |= (1ULL << (64 - 44));
+    if(DES_rounds_block & (1ULL << 52)) block |= (1ULL << (64 - 36));
+    if(DES_rounds_block & (1ULL << 51)) block |= (1ULL << (64 - 28));
+    if(DES_rounds_block & (1ULL << 50)) block |= (1ULL << (64 - 20));
+    if(DES_rounds_block & (1ULL << 49)) block |= (1ULL << (64 - 12));
+    if(DES_rounds_block & (1ULL << 48)) block |= (1ULL << (64 - 4));
 
-    if(rounds_block & (1ULL << 47)) block |= (1ULL << (64 - 62));
-    if(rounds_block & (1ULL << 46)) block |= (1ULL << (64 - 54));
-    if(rounds_block & (1ULL << 45)) block |= (1ULL << (64 - 46));
-    if(rounds_block & (1ULL << 44)) block |= (1ULL << (64 - 38));
-    if(rounds_block & (1ULL << 43)) block |= (1ULL << (64 - 30));
-    if(rounds_block & (1ULL << 42)) block |= (1ULL << (64 - 22));
-    if(rounds_block & (1ULL << 41)) block |= (1ULL << (64 - 14));
-    if(rounds_block & (1ULL << 40)) block |= (1ULL << (64 - 6));
-    if(rounds_block & (1ULL << 39)) block |= (1ULL << (64 - 64));
-    if(rounds_block & (1ULL << 38)) block |= (1ULL << (64 - 56));
-    if(rounds_block & (1ULL << 37)) block |= (1ULL << (64 - 48));
-    if(rounds_block & (1ULL << 36)) block |= (1ULL << (64 - 40));
-    if(rounds_block & (1ULL << 35)) block |= (1ULL << (64 - 32));
-    if(rounds_block & (1ULL << 34)) block |= (1ULL << (64 - 24));
-    if(rounds_block & (1ULL << 33)) block |= (1ULL << (64 - 16));
-    if(rounds_block & (1ULL << 32)) block |= (1ULL << (64 - 8));
+    if(DES_rounds_block & (1ULL << 47)) block |= (1ULL << (64 - 62));
+    if(DES_rounds_block & (1ULL << 46)) block |= (1ULL << (64 - 54));
+    if(DES_rounds_block & (1ULL << 45)) block |= (1ULL << (64 - 46));
+    if(DES_rounds_block & (1ULL << 44)) block |= (1ULL << (64 - 38));
+    if(DES_rounds_block & (1ULL << 43)) block |= (1ULL << (64 - 30));
+    if(DES_rounds_block & (1ULL << 42)) block |= (1ULL << (64 - 22));
+    if(DES_rounds_block & (1ULL << 41)) block |= (1ULL << (64 - 14));
+    if(DES_rounds_block & (1ULL << 40)) block |= (1ULL << (64 - 6));
+    if(DES_rounds_block & (1ULL << 39)) block |= (1ULL << (64 - 64));
+    if(DES_rounds_block & (1ULL << 38)) block |= (1ULL << (64 - 56));
+    if(DES_rounds_block & (1ULL << 37)) block |= (1ULL << (64 - 48));
+    if(DES_rounds_block & (1ULL << 36)) block |= (1ULL << (64 - 40));
+    if(DES_rounds_block & (1ULL << 35)) block |= (1ULL << (64 - 32));
+    if(DES_rounds_block & (1ULL << 34)) block |= (1ULL << (64 - 24));
+    if(DES_rounds_block & (1ULL << 33)) block |= (1ULL << (64 - 16));
+    if(DES_rounds_block & (1ULL << 32)) block |= (1ULL << (64 - 8));
 
-    if(rounds_block & (1ULL << 31)) block |= (1ULL << (64 - 57));
-    if(rounds_block & (1ULL << 30)) block |= (1ULL << (64 - 49));
-    if(rounds_block & (1ULL << 29)) block |= (1ULL << (64 - 41));
-    if(rounds_block & (1ULL << 28)) block |= (1ULL << (64 - 33));
-    if(rounds_block & (1ULL << 27)) block |= (1ULL << (64 - 25));
-    if(rounds_block & (1ULL << 26)) block |= (1ULL << (64 - 17));
-    if(rounds_block & (1ULL << 25)) block |= (1ULL << (64 - 9));
-    if(rounds_block & (1ULL << 24)) block |= (1ULL << (64 - 1));
-    if(rounds_block & (1ULL << 23)) block |= (1ULL << (64 - 59));
-    if(rounds_block & (1ULL << 22)) block |= (1ULL << (64 - 51));
-    if(rounds_block & (1ULL << 21)) block |= (1ULL << (64 - 43));
-    if(rounds_block & (1ULL << 20)) block |= (1ULL << (64 - 35));
-    if(rounds_block & (1ULL << 19)) block |= (1ULL << (64 - 27));
-    if(rounds_block & (1ULL << 18)) block |= (1ULL << (64 - 19));
-    if(rounds_block & (1ULL << 17)) block |= (1ULL << (64 - 11));
-    if(rounds_block & (1ULL << 16)) block |= (1ULL << (64 - 3));
+    if(DES_rounds_block & (1ULL << 31)) block |= (1ULL << (64 - 57));
+    if(DES_rounds_block & (1ULL << 30)) block |= (1ULL << (64 - 49));
+    if(DES_rounds_block & (1ULL << 29)) block |= (1ULL << (64 - 41));
+    if(DES_rounds_block & (1ULL << 28)) block |= (1ULL << (64 - 33));
+    if(DES_rounds_block & (1ULL << 27)) block |= (1ULL << (64 - 25));
+    if(DES_rounds_block & (1ULL << 26)) block |= (1ULL << (64 - 17));
+    if(DES_rounds_block & (1ULL << 25)) block |= (1ULL << (64 - 9));
+    if(DES_rounds_block & (1ULL << 24)) block |= (1ULL << (64 - 1));
+    if(DES_rounds_block & (1ULL << 23)) block |= (1ULL << (64 - 59));
+    if(DES_rounds_block & (1ULL << 22)) block |= (1ULL << (64 - 51));
+    if(DES_rounds_block & (1ULL << 21)) block |= (1ULL << (64 - 43));
+    if(DES_rounds_block & (1ULL << 20)) block |= (1ULL << (64 - 35));
+    if(DES_rounds_block & (1ULL << 19)) block |= (1ULL << (64 - 27));
+    if(DES_rounds_block & (1ULL << 18)) block |= (1ULL << (64 - 19));
+    if(DES_rounds_block & (1ULL << 17)) block |= (1ULL << (64 - 11));
+    if(DES_rounds_block & (1ULL << 16)) block |= (1ULL << (64 - 3));
 
-    if(rounds_block & (1ULL << 15)) block |= (1ULL << (64 - 61));
-    if(rounds_block & (1ULL << 14)) block |= (1ULL << (64 - 53));
-    if(rounds_block & (1ULL << 13)) block |= (1ULL << (64 - 45));
-    if(rounds_block & (1ULL << 12)) block |= (1ULL << (64 - 37));
-    if(rounds_block & (1ULL << 11)) block |= (1ULL << (64 - 29));
-    if(rounds_block & (1ULL << 10)) block |= (1ULL << (64 - 21));
-    if(rounds_block & (1ULL << 9)) block |= (1ULL << (64 - 13));
-    if(rounds_block & (1ULL << 8)) block |= (1ULL << (64 - 5));
-    if(rounds_block & (1ULL << 7)) block |= (1ULL << (64 - 63));
-    if(rounds_block & (1ULL << 6)) block |= (1ULL << (64 - 55));
-    if(rounds_block & (1ULL << 5)) block |= (1ULL << (64 - 47));
-    if(rounds_block & (1ULL << 4)) block |= (1ULL << (64 - 39));
-    if(rounds_block & (1ULL << 3)) block |= (1ULL << (64 - 31));
-    if(rounds_block & (1ULL << 2)) block |= (1ULL << (64 - 23));
-    if(rounds_block & (1ULL << 1)) block |= (1ULL << (64 - 15));
-    if(rounds_block & (1ULL << 0)) block |= (1ULL << (64 - 7));
+    if(DES_rounds_block & (1ULL << 15)) block |= (1ULL << (64 - 61));
+    if(DES_rounds_block & (1ULL << 14)) block |= (1ULL << (64 - 53));
+    if(DES_rounds_block & (1ULL << 13)) block |= (1ULL << (64 - 45));
+    if(DES_rounds_block & (1ULL << 12)) block |= (1ULL << (64 - 37));
+    if(DES_rounds_block & (1ULL << 11)) block |= (1ULL << (64 - 29));
+    if(DES_rounds_block & (1ULL << 10)) block |= (1ULL << (64 - 21));
+    if(DES_rounds_block & (1ULL << 9)) block |= (1ULL << (64 - 13));
+    if(DES_rounds_block & (1ULL << 8)) block |= (1ULL << (64 - 5));
+    if(DES_rounds_block & (1ULL << 7)) block |= (1ULL << (64 - 63));
+    if(DES_rounds_block & (1ULL << 6)) block |= (1ULL << (64 - 55));
+    if(DES_rounds_block & (1ULL << 5)) block |= (1ULL << (64 - 47));
+    if(DES_rounds_block & (1ULL << 4)) block |= (1ULL << (64 - 39));
+    if(DES_rounds_block & (1ULL << 3)) block |= (1ULL << (64 - 31));
+    if(DES_rounds_block & (1ULL << 2)) block |= (1ULL << (64 - 23));
+    if(DES_rounds_block & (1ULL << 1)) block |= (1ULL << (64 - 15));
+    if(DES_rounds_block & (1ULL << 0)) block |= (1ULL << (64 - 7));
 
     return;
 }
