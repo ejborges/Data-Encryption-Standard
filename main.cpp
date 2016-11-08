@@ -23,16 +23,27 @@
 #include <fstream>
 #include <time.h>
 #include <math.h>
+#include <vector>
 
-// comment out this define if not on POSIX system
-//#define POSIX
+// comment out if use no threading
+//#define THREADING
+#ifdef THREADING
+    // uncomment system to compile for
+    #define POSIX // OSX, Unix
+    //#define WINDOWS
 
-#ifdef POSIX
-#include <pthread.h>
+    #ifdef POSIX
+    #include <thread>
+    #endif
+
+    #ifdef WINDOWS
+    //#include <???>
+    #endif
+
 #endif
 
 // comment out this define to prevent debugging text from printing to the console
-//#define VERBOSE_DEBUG
+#define VERBOSE_DEBUG
 
 using namespace std;
 
@@ -47,13 +58,22 @@ unsigned int bytes_remaining;   // number of bytes yet to be read
 uint64_t roundkey[16];          // storage for the sixteen 48 bit sub keys used throughout DES's sixteen cycles
 clock_t start_time;             // storage for start time
 
+#ifndef THREADING
 // DES algorightm specific vars.
 // defined here to reduce compiler generated
 // instructions within DES() to speed up algorithm
 uint64_t DES_rounds_block;
 uint64_t DES_left32;
 uint64_t DES_right32;
-uint64_t saved_right32;
+uint64_t DES_saved_right32;
+#else
+vector<uint64_t>thread_data_blocks; // container for our 64 bit block throughout the DES algorithm when using threading
+//uint64_t block_thread;
+//struct readWriteReturn_thread {
+//    uint64_t block_thread;
+//    unsigned int bytes_remaining_thread;
+//};
+#endif
 
 //const int s1[] = {
 //        14, 4,13, 1, 2,15,11, 8, 3,10, 6,12, 5, 9, 0, 7,
@@ -146,11 +166,22 @@ const int s8[4][16] = {
 
 // function input/output defined with function definition
 void print64(uint64_t &value, char type);
+#ifndef THREADING
 void readBlock();
 void writeBlock();
 void DES();
+#else
+int readBlock(int id);
+void writeBlock(int id);
+void DES(int id);
+#endif
 
 int main(int argc, char *argv[]) {
+
+#if defined(POSIX) && defined(WINDOWS)
+    cout << "\nHow were you able to compile for both Unix and Windows threading??? This is not allowed. Exiting DES\n";
+    exit(0);
+#endif
 
     start_time = clock();
 
@@ -187,8 +218,6 @@ int main(int argc, char *argv[]) {
     cout << "\nVariable Values:";
     #endif
 
-
-
     // <-action>
     encrypt = false; // start with assuming we'll decrypt
     // first and last characters in first argument should be the same for selecting encrypt or decrypt
@@ -207,7 +236,7 @@ int main(int argc, char *argv[]) {
     #endif
 
     // <key>
-    key = 0ULL; // in order to set bits where they should go, our 64 bit key container should be cleared
+    key = 0; // in order to set bits where they should go, our 64 bit key container should be cleared
                 // 0ULL = Unsigned Long Long = 64 bit value of all zeros
     // keys will begin with a single quote or a hex digit
     if(argv[2][0] == '\''){
@@ -265,7 +294,7 @@ int main(int argc, char *argv[]) {
              << "For help, run DES with no arguments.\nYour <key> = " << argv[2] << endl;
         return 0;
     }
-    uint64_t badkey1 = 0ULL;
+    uint64_t badkey1 = 0;
     uint64_t badkey2 = 0xFFFFFFFFFFFFFFFF;
     uint64_t badkey3 = 0xFFFFFFFF00000000;
     uint64_t badkey4 = 0x00000000FFFFFFFF;
@@ -593,17 +622,30 @@ int main(int argc, char *argv[]) {
         cout << "\nEncrypting..." << endl;
         #endif
 
-        // Encrypt block
-        DES();
+        #ifndef THREADING
+            // Encrypt block
+            DES();
 
-        // write encrypted block (containing 33 bits of garbage and 31 bits of file length) to <outfile>
-        writeBlock();
-
-        while(bytes_remaining){
-            readBlock();
-            DES(); // Encrypt block
+            // write encrypted block (containing 33 bits of garbage and 31 bits of file length) to <outfile>
             writeBlock();
-        }
+
+            // read, encrypt, and write until no more bytes left
+            while(bytes_remaining){
+                readBlock();
+                DES(); // Encrypt block
+                writeBlock();
+            }
+        #else
+            //block_thread = DES(block_thread);
+            //writeBlock(block_thread);
+
+            #ifdef POSIX
+
+            #endif
+            #ifdef WINDOWS
+
+            #endif
+        #endif //THREADING
 
         cout << "\nSuccessfully ran DES encryption algorithm!";
     }
@@ -615,31 +657,90 @@ int main(int argc, char *argv[]) {
         if(infile_byte_length < 8) {cout << "\nInput file size too small. Exiting DES.\n"; return 0;}
         if(infile_byte_length % 8) {cout << "\nInput file size not multiple of 8. Exiting DES.\n"; return 0;}
 
-        // read first block containing original file length
-        readBlock();
-
-        // Decrypt block
-        DES();
-
-        // extract file length value by bit masking
-        bytes_remaining = (unsigned int)(block & 0x000000007fffffff);
-
-        // verify decrypted file length makes sense
-        if(bytes_remaining > (infile_byte_length - 8) || bytes_remaining < (infile_byte_length - 15))
-            {cout << "\nError with decrypted file length (= "
-                  << bytes_remaining << " bytes). Exiting DES.\n"; return 0;}
-
-        unsigned int total_bytes = bytes_remaining;
-        #ifdef VERBOSE_DEBUG
-        cout << "\n\tDecrypting " << total_bytes << " bytes (" << ceil(total_bytes / 8) << " blocks)\n";
-        #endif
-
-        // read, decrypt, and write until no more bytes left
-        while(bytes_remaining){
+        #ifndef THREADING
+            // read first block containing original file length
             readBlock();
-            DES(); // Decrypt block
-            writeBlock();
-        }
+
+            // Decrypt block
+            DES();
+
+            // extract file length value by bit masking
+            bytes_remaining = (unsigned int)(block & 0x000000007fffffff);
+
+            // verify decrypted file length makes sense
+            if(bytes_remaining > (infile_byte_length - 8) || bytes_remaining < (infile_byte_length - 15))
+            {cout << "\nError with decrypted file length (= "
+             << bytes_remaining << " bytes). Exiting DES.\n"; return 0;}
+
+            #ifdef VERBOSE_DEBUG
+            cout << "\n\tDecrypting " << bytes_remaining << " bytes (" << ceil(bytes_remaining / 8) << " blocks)\n";
+            #endif
+
+            // read, decrypt, and write until no more bytes left
+            while(bytes_remaining){
+                readBlock();
+                DES(); // Encrypt block
+                writeBlock();
+            }
+
+        #else //THREADING
+
+            thread_data_blocks.push_back(0);
+            readBlock(0); // will read 64 bits from file and place them in thread_data_blocks[0]
+            DES(0); // decrypt block and place results in thread_data_blocks[0]
+
+            // extract file length value by bit masking
+            bytes_remaining = (unsigned int)(thread_data_blocks[0] & 0x000000007fffffff);
+            unsigned int reading_bytes = bytes_remaining;
+
+            // verify decrypted file length makes sense
+            if(bytes_remaining > (infile_byte_length - 8) || bytes_remaining < (infile_byte_length - 15))
+                {cout << "\nError with decrypted file length (= "
+                      << bytes_remaining << " bytes). Exiting DES.\n"; return 0;}
+
+            #ifdef VERBOSE_DEBUG
+            cout << "\n\tDecrypting " << bytes_remaining << " bytes (" << ceil(bytes_remaining / 8) << " blocks)\n";
+            #endif
+
+
+            #ifdef POSIX
+
+            int id = 0; // id for vector<uint64_t>thread_data_blocks
+            vector<thread>threads;
+
+            // read block and create thread to decrypt and write that block
+            // loop until no more bytes left
+            while(reading_bytes){
+                ++id;
+                thread_data_blocks.push_back(0);
+                reading_bytes -= readBlock(id);
+                threads.push_back(thread(DES, id));
+
+                //cout << "\nCreated threads[" << (id - 1) << "]; reading_bytes = " << reading_bytes << endl;
+
+                //thread_return_code = pthread_create(&thread_id, NULL, threadingDES, (void *)thread_data.block_thread);
+
+                //threadingDES(thread_data);
+
+                //DES(); // Encrypt block
+                //writeBlock();
+            }
+
+        cout << "\nCreated all the threads\n";
+
+            // synchronize threads
+            for(int i = 0; i < id; ++i){
+                threads[i].join(); // pause main() until threads[i] finishes
+                writeBlock(i + 1); // once thread[i] finished, write decrypted block to file
+            }
+
+            // writeBlock();
+            #endif
+
+            #ifdef WINDOWS
+
+            #endif
+        #endif //THREADING
 
         cout << "\nSuccessfully ran DES decryption algorithm!";
     }
@@ -648,7 +749,10 @@ int main(int argc, char *argv[]) {
     cout << "\nElapsed time = " << (float)(clock() - start_time)/CLOCKS_PER_SEC << " seconds.\nDone\n\n";
 
     return 0;
-}
+
+} // main()
+
+
 
 // Data Encryption Standard
 // Here, we'll run the 64 bit block through the DES algorithm to
@@ -665,7 +769,18 @@ int main(int argc, char *argv[]) {
 //      2.7) Merge left and right half into 64 bit block
 // 3) swap resulting block's left and right half one more time
 // 4) run block through final permutation
+#ifndef THREADING
 void DES(){
+#else
+void DES(int id){
+#endif //THREADING
+
+    #ifdef THREADING
+    uint64_t DES_rounds_block;
+    uint64_t DES_left32;
+    uint64_t DES_right32;
+    uint64_t DES_saved_right32;
+    #endif //THREADING
 
     // ------------------------------------------------------------------------
     // Initial Permutation
@@ -673,6 +788,7 @@ void DES(){
 
     DES_rounds_block = 0;
 
+#ifndef THREADING
     if(block & (1ULL << 63)) DES_rounds_block |= (1ULL << (64 - 40));
     if(block & (1ULL << 62)) DES_rounds_block |= (1ULL << (64 - 8));
     if(block & (1ULL << 61)) DES_rounds_block |= (1ULL << (64 - 48));
@@ -740,6 +856,75 @@ void DES(){
     if(block & (1ULL << 2)) DES_rounds_block |= (1ULL << (64 - 17));
     if(block & (1ULL << 1)) DES_rounds_block |= (1ULL << (64 - 57));
     if(block & (1ULL << 0)) DES_rounds_block |= (1ULL << (64 - 25));
+#else //THREADING
+    if(thread_data_blocks[id] & (1ULL << 63)) DES_rounds_block |= (1ULL << (64 - 40));
+    if(thread_data_blocks[id] & (1ULL << 62)) DES_rounds_block |= (1ULL << (64 - 8));
+    if(thread_data_blocks[id] & (1ULL << 61)) DES_rounds_block |= (1ULL << (64 - 48));
+    if(thread_data_blocks[id] & (1ULL << 60)) DES_rounds_block |= (1ULL << (64 - 16));
+    if(thread_data_blocks[id] & (1ULL << 59)) DES_rounds_block |= (1ULL << (64 - 56));
+    if(thread_data_blocks[id] & (1ULL << 58)) DES_rounds_block |= (1ULL << (64 - 24));
+    if(thread_data_blocks[id] & (1ULL << 57)) DES_rounds_block |= (1ULL << (64 - 64));
+    if(thread_data_blocks[id] & (1ULL << 56)) DES_rounds_block |= (1ULL << (64 - 32));
+    if(thread_data_blocks[id] & (1ULL << 55)) DES_rounds_block |= (1ULL << (64 - 39));
+    if(thread_data_blocks[id] & (1ULL << 54)) DES_rounds_block |= (1ULL << (64 - 7));
+    if(thread_data_blocks[id] & (1ULL << 53)) DES_rounds_block |= (1ULL << (64 - 47));
+    if(thread_data_blocks[id] & (1ULL << 52)) DES_rounds_block |= (1ULL << (64 - 15));
+    if(thread_data_blocks[id] & (1ULL << 51)) DES_rounds_block |= (1ULL << (64 - 55));
+    if(thread_data_blocks[id] & (1ULL << 50)) DES_rounds_block |= (1ULL << (64 - 23));
+    if(thread_data_blocks[id] & (1ULL << 49)) DES_rounds_block |= (1ULL << (64 - 63));
+    if(thread_data_blocks[id] & (1ULL << 48)) DES_rounds_block |= (1ULL << (64 - 31));
+
+    if(thread_data_blocks[id] & (1ULL << 47)) DES_rounds_block |= (1ULL << (64 - 38));
+    if(thread_data_blocks[id] & (1ULL << 46)) DES_rounds_block |= (1ULL << (64 - 6));
+    if(thread_data_blocks[id] & (1ULL << 45)) DES_rounds_block |= (1ULL << (64 - 46));
+    if(thread_data_blocks[id] & (1ULL << 44)) DES_rounds_block |= (1ULL << (64 - 14));
+    if(thread_data_blocks[id] & (1ULL << 43)) DES_rounds_block |= (1ULL << (64 - 54));
+    if(thread_data_blocks[id] & (1ULL << 42)) DES_rounds_block |= (1ULL << (64 - 22));
+    if(thread_data_blocks[id] & (1ULL << 41)) DES_rounds_block |= (1ULL << (64 - 62));
+    if(thread_data_blocks[id] & (1ULL << 40)) DES_rounds_block |= (1ULL << (64 - 30));
+    if(thread_data_blocks[id] & (1ULL << 39)) DES_rounds_block |= (1ULL << (64 - 37));
+    if(thread_data_blocks[id] & (1ULL << 38)) DES_rounds_block |= (1ULL << (64 - 5));
+    if(thread_data_blocks[id] & (1ULL << 37)) DES_rounds_block |= (1ULL << (64 - 45));
+    if(thread_data_blocks[id] & (1ULL << 36)) DES_rounds_block |= (1ULL << (64 - 13));
+    if(thread_data_blocks[id] & (1ULL << 35)) DES_rounds_block |= (1ULL << (64 - 53));
+    if(thread_data_blocks[id] & (1ULL << 34)) DES_rounds_block |= (1ULL << (64 - 21));
+    if(thread_data_blocks[id] & (1ULL << 33)) DES_rounds_block |= (1ULL << (64 - 61));
+    if(thread_data_blocks[id] & (1ULL << 32)) DES_rounds_block |= (1ULL << (64 - 29));
+
+    if(thread_data_blocks[id] & (1ULL << 31)) DES_rounds_block |= (1ULL << (64 - 36));
+    if(thread_data_blocks[id] & (1ULL << 30)) DES_rounds_block |= (1ULL << (64 - 4));
+    if(thread_data_blocks[id] & (1ULL << 29)) DES_rounds_block |= (1ULL << (64 - 44));
+    if(thread_data_blocks[id] & (1ULL << 28)) DES_rounds_block |= (1ULL << (64 - 12));
+    if(thread_data_blocks[id] & (1ULL << 27)) DES_rounds_block |= (1ULL << (64 - 52));
+    if(thread_data_blocks[id] & (1ULL << 26)) DES_rounds_block |= (1ULL << (64 - 20));
+    if(thread_data_blocks[id] & (1ULL << 25)) DES_rounds_block |= (1ULL << (64 - 60));
+    if(thread_data_blocks[id] & (1ULL << 24)) DES_rounds_block |= (1ULL << (64 - 28));
+    if(thread_data_blocks[id] & (1ULL << 23)) DES_rounds_block |= (1ULL << (64 - 35));
+    if(thread_data_blocks[id] & (1ULL << 22)) DES_rounds_block |= (1ULL << (64 - 3));
+    if(thread_data_blocks[id] & (1ULL << 21)) DES_rounds_block |= (1ULL << (64 - 43));
+    if(thread_data_blocks[id] & (1ULL << 20)) DES_rounds_block |= (1ULL << (64 - 11));
+    if(thread_data_blocks[id] & (1ULL << 19)) DES_rounds_block |= (1ULL << (64 - 51));
+    if(thread_data_blocks[id] & (1ULL << 18)) DES_rounds_block |= (1ULL << (64 - 19));
+    if(thread_data_blocks[id] & (1ULL << 17)) DES_rounds_block |= (1ULL << (64 - 59));
+    if(thread_data_blocks[id] & (1ULL << 16)) DES_rounds_block |= (1ULL << (64 - 27));
+
+    if(thread_data_blocks[id] & (1ULL << 15)) DES_rounds_block |= (1ULL << (64 - 34));
+    if(thread_data_blocks[id] & (1ULL << 14)) DES_rounds_block |= (1ULL << (64 - 2));
+    if(thread_data_blocks[id] & (1ULL << 13)) DES_rounds_block |= (1ULL << (64 - 42));
+    if(thread_data_blocks[id] & (1ULL << 12)) DES_rounds_block |= (1ULL << (64 - 10));
+    if(thread_data_blocks[id] & (1ULL << 11)) DES_rounds_block |= (1ULL << (64 - 50));
+    if(thread_data_blocks[id] & (1ULL << 10)) DES_rounds_block |= (1ULL << (64 - 18));
+    if(thread_data_blocks[id] & (1ULL << 9)) DES_rounds_block |= (1ULL << (64 - 58));
+    if(thread_data_blocks[id] & (1ULL << 8)) DES_rounds_block |= (1ULL << (64 - 26));
+    if(thread_data_blocks[id] & (1ULL << 7)) DES_rounds_block |= (1ULL << (64 - 33));
+    if(thread_data_blocks[id] & (1ULL << 6)) DES_rounds_block |= (1ULL << (64 - 1));
+    if(thread_data_blocks[id] & (1ULL << 5)) DES_rounds_block |= (1ULL << (64 - 41));
+    if(thread_data_blocks[id] & (1ULL << 4)) DES_rounds_block |= (1ULL << (64 - 9));
+    if(thread_data_blocks[id] & (1ULL << 3)) DES_rounds_block |= (1ULL << (64 - 49));
+    if(thread_data_blocks[id] & (1ULL << 2)) DES_rounds_block |= (1ULL << (64 - 17));
+    if(thread_data_blocks[id] & (1ULL << 1)) DES_rounds_block |= (1ULL << (64 - 57));
+    if(thread_data_blocks[id] & (1ULL << 0)) DES_rounds_block |= (1ULL << (64 - 25));
+#endif //THREADING
 
     // ------------------------------------------------------------------------
     // Go through the 16 Rounds
@@ -749,7 +934,7 @@ void DES(){
         // Split 64 bit input into left and right 32 bit halves
         DES_left32 = DES_rounds_block >> 32;
         DES_right32 = DES_rounds_block & 0x00000000ffffffff;
-        saved_right32 = DES_right32;
+        DES_saved_right32 = DES_right32;
 
         // Expand 32 bit right half into 48 bit permuted right half
         uint64_t right48 = 0;
@@ -815,6 +1000,7 @@ void DES(){
         DES_right32 |= (uint64_t)(s7[(((right48 >> 10) & 0b10) | ((right48 >> 6) & 0b000001))][((right48 >> 7) & 0b01111)]) << 4;
         DES_right32 |= (uint64_t)(s8[(((right48 >> 4) & 0b10) | ((right48) & 0b000001))][((right48 >> 1) & 0b01111)]);
 
+        //If s boxes are single 64 element array instead of double array
 //        DES_right32 |= (uint64_t)(s1[((((right48 >> 46) & 0b10) | ((right48 >> 42) & 0b000001)) << 4) + ((right48 >> 43) & 0b01111)]) << 28;
 //        DES_right32 |= (uint64_t)(s2[((((right48 >> 40) & 0b10) | ((right48 >> 36) & 0b000001)) << 4) + (((right48 >> 37) & 0b01111))]) << 24;
 //        DES_right32 |= (uint64_t)(s3[((((right48 >> 34) & 0b10) | ((right48 >> 30) & 0b000001)) << 4) + (((right48 >> 31) & 0b01111))]) << 20;
@@ -873,7 +1059,7 @@ void DES(){
         DES_right32 ^= DES_left32;
 
         // Merge left and right half
-        DES_rounds_block = (saved_right32 << 32) | DES_right32;
+        DES_rounds_block = (DES_saved_right32 << 32) | DES_right32;
     }
 
     // Split resulting rounds block and swap left and right halves one more time
@@ -888,6 +1074,7 @@ void DES(){
     // Final Permutation
     // ------------------------------------------------------------------------
 
+#ifndef THREADING
     block = 0;
 
     if(DES_rounds_block & (1ULL << 63)) block |= (1ULL << (64 - 58));
@@ -959,62 +1146,216 @@ void DES(){
     if(DES_rounds_block & (1ULL << 0)) block |= (1ULL << (64 - 7));
 
     return;
+#else //THREADING
+    thread_data_blocks[id] = 0;
+
+    if(DES_rounds_block & (1ULL << 63)) thread_data_blocks[id] |= (1ULL << (64 - 58));
+    if(DES_rounds_block & (1ULL << 62)) thread_data_blocks[id] |= (1ULL << (64 - 50));
+    if(DES_rounds_block & (1ULL << 61)) thread_data_blocks[id] |= (1ULL << (64 - 42));
+    if(DES_rounds_block & (1ULL << 60)) thread_data_blocks[id] |= (1ULL << (64 - 34));
+    if(DES_rounds_block & (1ULL << 59)) thread_data_blocks[id] |= (1ULL << (64 - 26));
+    if(DES_rounds_block & (1ULL << 58)) thread_data_blocks[id] |= (1ULL << (64 - 18));
+    if(DES_rounds_block & (1ULL << 57)) thread_data_blocks[id] |= (1ULL << (64 - 10));
+    if(DES_rounds_block & (1ULL << 56)) thread_data_blocks[id] |= (1ULL << (64 - 2));
+    if(DES_rounds_block & (1ULL << 55)) thread_data_blocks[id] |= (1ULL << (64 - 60));
+    if(DES_rounds_block & (1ULL << 54)) thread_data_blocks[id] |= (1ULL << (64 - 52));
+    if(DES_rounds_block & (1ULL << 53)) thread_data_blocks[id] |= (1ULL << (64 - 44));
+    if(DES_rounds_block & (1ULL << 52)) thread_data_blocks[id] |= (1ULL << (64 - 36));
+    if(DES_rounds_block & (1ULL << 51)) thread_data_blocks[id] |= (1ULL << (64 - 28));
+    if(DES_rounds_block & (1ULL << 50)) thread_data_blocks[id] |= (1ULL << (64 - 20));
+    if(DES_rounds_block & (1ULL << 49)) thread_data_blocks[id] |= (1ULL << (64 - 12));
+    if(DES_rounds_block & (1ULL << 48)) thread_data_blocks[id] |= (1ULL << (64 - 4));
+
+    if(DES_rounds_block & (1ULL << 47)) thread_data_blocks[id] |= (1ULL << (64 - 62));
+    if(DES_rounds_block & (1ULL << 46)) thread_data_blocks[id] |= (1ULL << (64 - 54));
+    if(DES_rounds_block & (1ULL << 45)) thread_data_blocks[id] |= (1ULL << (64 - 46));
+    if(DES_rounds_block & (1ULL << 44)) thread_data_blocks[id] |= (1ULL << (64 - 38));
+    if(DES_rounds_block & (1ULL << 43)) thread_data_blocks[id] |= (1ULL << (64 - 30));
+    if(DES_rounds_block & (1ULL << 42)) thread_data_blocks[id] |= (1ULL << (64 - 22));
+    if(DES_rounds_block & (1ULL << 41)) thread_data_blocks[id] |= (1ULL << (64 - 14));
+    if(DES_rounds_block & (1ULL << 40)) thread_data_blocks[id] |= (1ULL << (64 - 6));
+    if(DES_rounds_block & (1ULL << 39)) thread_data_blocks[id] |= (1ULL << (64 - 64));
+    if(DES_rounds_block & (1ULL << 38)) thread_data_blocks[id] |= (1ULL << (64 - 56));
+    if(DES_rounds_block & (1ULL << 37)) thread_data_blocks[id] |= (1ULL << (64 - 48));
+    if(DES_rounds_block & (1ULL << 36)) thread_data_blocks[id] |= (1ULL << (64 - 40));
+    if(DES_rounds_block & (1ULL << 35)) thread_data_blocks[id] |= (1ULL << (64 - 32));
+    if(DES_rounds_block & (1ULL << 34)) thread_data_blocks[id] |= (1ULL << (64 - 24));
+    if(DES_rounds_block & (1ULL << 33)) thread_data_blocks[id] |= (1ULL << (64 - 16));
+    if(DES_rounds_block & (1ULL << 32)) thread_data_blocks[id] |= (1ULL << (64 - 8));
+
+    if(DES_rounds_block & (1ULL << 31)) thread_data_blocks[id] |= (1ULL << (64 - 57));
+    if(DES_rounds_block & (1ULL << 30)) thread_data_blocks[id] |= (1ULL << (64 - 49));
+    if(DES_rounds_block & (1ULL << 29)) thread_data_blocks[id] |= (1ULL << (64 - 41));
+    if(DES_rounds_block & (1ULL << 28)) thread_data_blocks[id] |= (1ULL << (64 - 33));
+    if(DES_rounds_block & (1ULL << 27)) thread_data_blocks[id] |= (1ULL << (64 - 25));
+    if(DES_rounds_block & (1ULL << 26)) thread_data_blocks[id] |= (1ULL << (64 - 17));
+    if(DES_rounds_block & (1ULL << 25)) thread_data_blocks[id] |= (1ULL << (64 - 9));
+    if(DES_rounds_block & (1ULL << 24)) thread_data_blocks[id] |= (1ULL << (64 - 1));
+    if(DES_rounds_block & (1ULL << 23)) thread_data_blocks[id] |= (1ULL << (64 - 59));
+    if(DES_rounds_block & (1ULL << 22)) thread_data_blocks[id] |= (1ULL << (64 - 51));
+    if(DES_rounds_block & (1ULL << 21)) thread_data_blocks[id] |= (1ULL << (64 - 43));
+    if(DES_rounds_block & (1ULL << 20)) thread_data_blocks[id] |= (1ULL << (64 - 35));
+    if(DES_rounds_block & (1ULL << 19)) thread_data_blocks[id] |= (1ULL << (64 - 27));
+    if(DES_rounds_block & (1ULL << 18)) thread_data_blocks[id] |= (1ULL << (64 - 19));
+    if(DES_rounds_block & (1ULL << 17)) thread_data_blocks[id] |= (1ULL << (64 - 11));
+    if(DES_rounds_block & (1ULL << 16)) thread_data_blocks[id] |= (1ULL << (64 - 3));
+
+    if(DES_rounds_block & (1ULL << 15)) thread_data_blocks[id] |= (1ULL << (64 - 61));
+    if(DES_rounds_block & (1ULL << 14)) thread_data_blocks[id] |= (1ULL << (64 - 53));
+    if(DES_rounds_block & (1ULL << 13)) thread_data_blocks[id] |= (1ULL << (64 - 45));
+    if(DES_rounds_block & (1ULL << 12)) thread_data_blocks[id] |= (1ULL << (64 - 37));
+    if(DES_rounds_block & (1ULL << 11)) thread_data_blocks[id] |= (1ULL << (64 - 29));
+    if(DES_rounds_block & (1ULL << 10)) thread_data_blocks[id] |= (1ULL << (64 - 21));
+    if(DES_rounds_block & (1ULL << 9)) thread_data_blocks[id] |= (1ULL << (64 - 13));
+    if(DES_rounds_block & (1ULL << 8)) thread_data_blocks[id] |= (1ULL << (64 - 5));
+    if(DES_rounds_block & (1ULL << 7)) thread_data_blocks[id] |= (1ULL << (64 - 63));
+    if(DES_rounds_block & (1ULL << 6)) thread_data_blocks[id] |= (1ULL << (64 - 55));
+    if(DES_rounds_block & (1ULL << 5)) thread_data_blocks[id] |= (1ULL << (64 - 47));
+    if(DES_rounds_block & (1ULL << 4)) thread_data_blocks[id] |= (1ULL << (64 - 39));
+    if(DES_rounds_block & (1ULL << 3)) thread_data_blocks[id] |= (1ULL << (64 - 31));
+    if(DES_rounds_block & (1ULL << 2)) thread_data_blocks[id] |= (1ULL << (64 - 23));
+    if(DES_rounds_block & (1ULL << 1)) thread_data_blocks[id] |= (1ULL << (64 - 15));
+    if(DES_rounds_block & (1ULL << 0)) thread_data_blocks[id] |= (1ULL << (64 - 7));
+
+    return;
+#endif //THREADING
 }
 
 
 // read 8 bytes from <infile> and places them in the global block variable
 // if 8 bytes not available, read as many bytes as possible and fill in the rest with random chars
-void readBlock(){
-    if(!infile.is_open()) {cout << "\nError while reading from <infile>. File not open. Exiting DES."; exit(0);}
+#ifndef THREADING
+void readBlock() {
 
-    block = 0ULL;
+    block = 0;
+
+    if (!infile.is_open()) {
+        cout << "\nError while reading from <infile>. File not open. Exiting DES.";
+        exit(0);
+    }
+
 
     char buffer[8]; // storage for all 8 chars in 64 bits
     infile.read(buffer, 8); // read 8 bytes from infile and store them in buffer[]
 
     // if read() reaches end of file, it sets both eof and failbit flags
-    if(infile.fail() && !infile.eof()) {cout << "\nError while reading from <infile>. Exiting DES."; exit(0);}
+    if (infile.fail() && !infile.eof()) {
+        cout << "\nError while reading from <infile>. Exiting DES.";
+        exit(0);
+    }
 
     // if end of file reached, fill the remaining bytes in buffer[] with random garbage
-    if(infile.eof()) for(int i = (int)infile.gcount(); i < 8; ++i) buffer[i] = (unsigned char)(rand() % 256);
+    if (infile.eof()) for (int i = (int) infile.gcount(); i < 8; ++i) buffer[i] = (unsigned char) (rand() % 256);
+
+    if (encrypt) bytes_remaining -= infile.gcount();
+
+    // place contents of buffer[] into appropriate location in 64 bit block;
+    // have to cast buffer as unsigned char before casting as uint64_t or else
+    // sign carries over and fills block with bunch of 1s
+    block |= (uint64_t) ((unsigned char) buffer[0]) << 56;
+    block |= (uint64_t) ((unsigned char) buffer[1]) << 48;
+    block |= (uint64_t) ((unsigned char) buffer[2]) << 40;
+    block |= (uint64_t) ((unsigned char) buffer[3]) << 32;
+    block |= (uint64_t) ((unsigned char) buffer[4]) << 24;
+    block |= (uint64_t) ((unsigned char) buffer[5]) << 16;
+    block |= (uint64_t) ((unsigned char) buffer[6]) << 8;
+    block |= (uint64_t) ((unsigned char) buffer[7]);
+
+    return;
+}
+#else //THREADING
+int readBlock(int id){
+
+    thread_data_blocks[id] = 0;
+
+    if (!infile.is_open()) {
+        cout << "\nError while reading from <infile>. File not open. Exiting DES.";
+        exit(0);
+    }
+
+
+    char buffer[8]; // storage for all 8 chars in 64 bits
+    infile.read(buffer, 8); // read 8 bytes from infile and store them in buffer[]
+
+    // if read() reaches end of file, it sets both eof and failbit flags
+    if (infile.fail() && !infile.eof()) {
+        cout << "\nError while reading from <infile>. Exiting DES.";
+        exit(0);
+    }
+
+    // if end of file reached, fill the remaining bytes in buffer[] with random garbage
+    if (infile.eof()) for (int i = (int) infile.gcount(); i < 8; ++i) buffer[i] = (unsigned char) (rand() % 256);
 
     if(encrypt) bytes_remaining -= infile.gcount();
 
     // place contents of buffer[] into appropriate location in 64 bit block;
     // have to cast buffer as unsigned char before casting as uint64_t or else
     // sign carries over and fills block with bunch of 1s
-    block |= (uint64_t)((unsigned char)buffer[0]) << 56;
-    block |= (uint64_t)((unsigned char)buffer[1]) << 48;
-    block |= (uint64_t)((unsigned char)buffer[2]) << 40;
-    block |= (uint64_t)((unsigned char)buffer[3]) << 32;
-    block |= (uint64_t)((unsigned char)buffer[4]) << 24;
-    block |= (uint64_t)((unsigned char)buffer[5]) << 16;
-    block |= (uint64_t)((unsigned char)buffer[6]) << 8;
-    block |= (uint64_t)((unsigned char)buffer[7]);
+    thread_data_blocks[id] |= (uint64_t)((unsigned char)buffer[0]) << 56;
+    thread_data_blocks[id] |= (uint64_t)((unsigned char)buffer[1]) << 48;
+    thread_data_blocks[id] |= (uint64_t)((unsigned char)buffer[2]) << 40;
+    thread_data_blocks[id] |= (uint64_t)((unsigned char)buffer[3]) << 32;
+    thread_data_blocks[id] |= (uint64_t)((unsigned char)buffer[4]) << 24;
+    thread_data_blocks[id] |= (uint64_t)((unsigned char)buffer[5]) << 16;
+    thread_data_blocks[id] |= (uint64_t)((unsigned char)buffer[6]) << 8;
+    thread_data_blocks[id] |= (uint64_t)((unsigned char)buffer[7]);
 
-    //#define readBlock_DEBUG
-    #ifdef readBlock_DEBUG
-    cout << "\nreadBlock(){";
-    // print each buffer element as char and hex value
-    for(int i = 0; i < 8; ++i) {
-        cout << "\n\tbuffer[" << i << "] = '" << (unsigned char)buffer[i] << "' = ";
-        printf("0x%02X", (unsigned char)buffer[i]); // %02X prints 2 uppercase hex digits
-    }
-    // print block as hex and binary
-    cout << "\n\tblock = ";
-    print64(block, 'x');
-    cout << "\n\t      = ";
-    print64(block, 'b');
-    cout << "\n}" << endl;
-    #endif
-
-    return;
+    return (int)infile.gcount();
 }
-
+#endif //THREADING
 
 // write 64 bit block to <outfile> or
 // n bytes if writing last decrypted block containing padding garbage bytes
-void writeBlock(){
+#ifndef THREADING
+void writeBlock() {
+    if (!outfile.is_open()) {
+        cout << "\nError while writing to <outfile>. File not open. Exiting DES.";
+        exit(0);
+    }
+
+    char buffer[8]; // storage for all 8 chars in 64 bits
+
+    // grab byte chunks from 64 bit block and place them into buffer[]
+    // first, bit mask the byte needed
+    // then, shift the value so bits are in lower 8 bits of uint64_t
+    // finally, as an optional step, cast as char so compiler/IDE doesn't complain
+    buffer[0] = (char) ((block & 0xff00000000000000) >> 56);
+    buffer[1] = (char) ((block & 0x00ff000000000000) >> 48);
+    buffer[2] = (char) ((block & 0x0000ff0000000000) >> 40);
+    buffer[3] = (char) ((block & 0x000000ff00000000) >> 32);
+    buffer[4] = (char) ((block & 0x00000000ff000000) >> 24);
+    buffer[5] = (char) ((block & 0x0000000000ff0000) >> 16);
+    buffer[6] = (char) ((block & 0x000000000000ff00) >> 8);
+    buffer[7] = (char) ((block & 0x00000000000000ff));
+
+    // if we're encrypting, don't subtract from bytes_remaining
+    if (encrypt) outfile.write(buffer, 8);
+    else {
+        // write buffer to <outfile>
+        if (bytes_remaining < 8) {
+            outfile.write(buffer, bytes_remaining);
+            bytes_remaining -= bytes_remaining;
+        }
+        else {
+            outfile.write(buffer, 8);
+            bytes_remaining -= 8;
+        }
+    }
+
+    // force ofstream buffer to write to file now
+    outfile.flush();
+
+    // check for any errors from writing to file
+    if (outfile.fail()) {
+        cout << "\nError while writing to <outfile>. Exiting DES.";
+        exit(0);
+    }
+
+    return;
+}
+#else //THREADING
+//readWriteReturn_thread writeBlock(readWriteReturn_thread writeReturn){
+void writeBlock(int id){
     if(!outfile.is_open()) {cout << "\nError while writing to <outfile>. File not open. Exiting DES."; exit(0);}
 
     char buffer[8]; // storage for all 8 chars in 64 bits
@@ -1023,20 +1364,23 @@ void writeBlock(){
     // first, bit mask the byte needed
     // then, shift the value so bits are in lower 8 bits of uint64_t
     // finally, as an optional step, cast as char so compiler/IDE doesn't complain
-    buffer[0] = (char)((block & 0xff00000000000000) >> 56);
-    buffer[1] = (char)((block & 0x00ff000000000000) >> 48);
-    buffer[2] = (char)((block & 0x0000ff0000000000) >> 40);
-    buffer[3] = (char)((block & 0x000000ff00000000) >> 32);
-    buffer[4] = (char)((block & 0x00000000ff000000) >> 24);
-    buffer[5] = (char)((block & 0x0000000000ff0000) >> 16);
-    buffer[6] = (char)((block & 0x000000000000ff00) >> 8);
-    buffer[7] = (char)((block & 0x00000000000000ff));
+    buffer[0] = (char)((thread_data_blocks[id] & 0xff00000000000000) >> 56);
+    buffer[1] = (char)((thread_data_blocks[id] & 0x00ff000000000000) >> 48);
+    buffer[2] = (char)((thread_data_blocks[id] & 0x0000ff0000000000) >> 40);
+    buffer[3] = (char)((thread_data_blocks[id] & 0x000000ff00000000) >> 32);
+    buffer[4] = (char)((thread_data_blocks[id] & 0x00000000ff000000) >> 24);
+    buffer[5] = (char)((thread_data_blocks[id] & 0x0000000000ff0000) >> 16);
+    buffer[6] = (char)((thread_data_blocks[id] & 0x000000000000ff00) >> 8);
+    buffer[7] = (char)((thread_data_blocks[id] & 0x00000000000000ff));
 
     // if we're encrypting, don't subtract from bytes_remaining
     if(encrypt) outfile.write(buffer, 8);
     else{
         // write buffer to <outfile>
-        if(bytes_remaining < 8) {outfile.write(buffer, bytes_remaining); bytes_remaining -= bytes_remaining;}
+        if(bytes_remaining < 8) {
+            outfile.write(buffer, bytes_remaining);
+            bytes_remaining -= bytes_remaining;
+        }
         else {outfile.write(buffer, 8); bytes_remaining -= 8;}
     }
 
@@ -1046,25 +1390,10 @@ void writeBlock(){
     // check for any errors from writing to file
     if(outfile.fail()) {cout << "\nError while writing to <outfile>. Exiting DES."; exit(0);}
 
-    //#define writeBlock_DEBUG
-    #ifdef writeBlock_DEBUG
-    cout << "\nwriteBlock(){";
-    // print each buffer element as char and hex value
-    for(int i = 0; i < 8; ++i) {
-        cout << "\n\tbuffer[" << i << "] = '" << (unsigned char)buffer[i] << "' = ";
-        printf("0x%02X", (unsigned char)buffer[i]); // %02X prints 2 uppercase hex digits
-        if((unsigned char)buffer[i] > 0xff) cout << "; buffer[" << i << "] = " << (unsigned char)buffer[i] << " too large!!!";
-    }
-    // print block as hex and binary
-    cout << "\n\tblock = ";
-    print64(block, 'x');
-    cout << "\n\t      = ";
-    print64(block, 'b');
-    cout << "\n}" << endl;
-    #endif
-
+    //return writeReturn;
     return;
 }
+#endif //THREADING
 
 
 // cout the given 64 bit value in its binary, hex, or "string" representation
